@@ -1,25 +1,29 @@
+use std::marker::PhantomData;
 use bevy_reflect::TypePath;
 use bevy_asset::{Asset};
-use crate::value::AnimatableValue;
+use bevy_transform::prelude::Transform;
+use crate::value::{AnimatableValue, TLTransform};
 
-pub struct Keyframe<V:AnimatableValue> {
+pub struct Keyframe<V:AnimatableValue<Out>, Out> {
     pub time:f32,
     pub value:V,
+    inner : PhantomData<Out>
 }
 
-impl <V:AnimatableValue> Keyframe<V> {
-    pub fn new(time:f32,value:V) -> Keyframe<V> {
-        Self { time, value }
+impl <V:AnimatableValue<Out>,Out> Keyframe<V,Out> {
+    pub fn new(time:f32,value:V) -> Keyframe<V, Out> {
+        Self { time, value, inner : PhantomData }
     }
 
-    pub fn lerp(&self, elapsed:f32, next:&Keyframe<V>, out:&mut V) {
-        self.value.tl_lerp(elapsed, &next.value, out);
+    pub fn lerp(&self, elapsed:f32, next:&Keyframe<V,Out>, out:&mut V) {
+        self.value.interpolate(elapsed, &next.value, out);
     }
 }
 
 #[derive(TypePath,Asset)]
-pub struct Timeline {
-    frames : Vec<Keyframe<K>>
+pub struct Timeline<K=TLTransform,Out=Transform> {
+    playtime : f32,
+    frames : Vec<Keyframe<K,Out>>
 }
 
 impl <K> Default for Timeline<K> where K:AnimatableValue + Asset {

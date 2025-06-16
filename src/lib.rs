@@ -30,17 +30,53 @@ use crate::player::TimelinePlayer;
 use crate::timeline::Timeline;
 use crate::value::AnimatableValue;
 
-pub struct TimelinePlugin;
 
-impl Plugin for TimelinePlugin {
+#[derive(Component)]
+struct TLInactive;
+
+#[derive(Component)]
+struct TLActive;
+
+pub struct TimelinePlugin<Keyframe,Out> where Keyframe:AnimatableValue<Out>, Out: Component {
+    inner : PhantomData<Keyframe>,
+    inner_out : PhantomData<Out>,
+}
+
+impl <Keyframe,Out> Plugin for TimelinePlugin<Keyframe,Out> where Keyframe:AnimatableValue<Out> + Send + Sync + 'static, Out: Component {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(PostUpdate, timeline_animation.in_set(TransformSystem::TransformPropagate))
+            .add_systems(PostUpdate, timeline_control_animation::<Keyframe,Out>.chain(timeline_step_animation::<Keyframe,Out>) )
         ;
     }
 }
 
-fn timeline_animation(
+
+
+//start animation, stop animation
+fn timeline_control_animation<T:AnimatableValue<Out>,Out:Component>(
+    mut commands: Commands,
+    time: Res<Time>,
+    assets: Res<Assets<Timeline<T>>>,
+    world: &mut World,
+    players: Query<(Entity, &mut TimelinePlayer)>,
+    childs: Query<(Entity, &Out, &TLInactive)>,
+) {
+    for (entity,player) in players.iter() {
+        let anim_handle = player.play_list();
+        if let Some(anim) = assets.get(anim_handle) {
+            for (target, entity) in player.binded_targets() {
+                let target = anim.get_target( target );
+                if let Some(transform) = world.get_mut::<Transform>(*entity) {
+                    //entity_mut.get::<Transform>();
+                }
+            }
+        }
+    }
+}
+
+
+//interploate keyframe, stop animation
+fn timeline_step_animation(
     mut commands: Commands,
     time: Res<Time>,
     assets: Res<Assets<Timeline>>,
@@ -58,24 +94,4 @@ fn timeline_animation(
             }
         }
     }
-}
-
-pub struct CustomTimelinePlugin<T> where T:AnimatableValue + Component {
-    inner : PhantomData<T>,
-}
-
-impl <T> Plugin for CustomTimelinePlugin<T> where T:AnimatableValue + Component {
-    fn build(&self, app: &mut App) {
-        app
-            .add_systems(PostUpdate, custom_timeline_animation::<T> )
-        ;
-    }
-}
-
-
-fn custom_timeline_animation<T: AnimatableValue + Component>(
-    mut commands : Commands,
-    query: Query<(Entity, &T)>,
-) {
-    
 }
