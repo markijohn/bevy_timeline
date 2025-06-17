@@ -2,10 +2,8 @@
 //! 
 //! It has nothing to do with the animations built into bevy.
 //!
-//! This library aims to be very accessible.
+//! This project is in its early stages and is highly experimental.
 //! 
-//! Timeline animations are available for the following types
-//!
 //! Timeline animations are available for the following types
 //! [`Transition`]: Changes the transition of a Transform.
 //! [`Scale`]: Changes the scale of the Transform.
@@ -32,34 +30,30 @@ use crate::value::AnimatableValue;
 
 
 #[derive(Component)]
-struct TLInactive;
-
-#[derive(Component)]
 struct TLActive;
 
-pub struct TimelinePlugin<Keyframe,Out> where Keyframe:AnimatableValue<Out>, Out: Component {
-    inner : PhantomData<Keyframe>,
-    inner_out : PhantomData<Out>,
+pub struct TimelinePlugin<K> where K:AnimatableValue + 'static {
+    inner : PhantomData<K>,
 }
 
-impl <Keyframe,Out> Plugin for TimelinePlugin<Keyframe,Out> where Keyframe:AnimatableValue<Out> + Send + Sync + 'static, Out: Component {
+impl <K> Plugin for TimelinePlugin<K> where K:AnimatableValue + Send + Sync + 'static {
     fn build(&self, app: &mut App) {
         app
-            .add_systems(PostUpdate, timeline_control_animation::<Keyframe,Out>.chain(timeline_step_animation::<Keyframe,Out>) )
+            .add_systems(PostUpdate, timeline_control_animation::<K>.chain(timeline_step_animation::<K>) )
         ;
     }
 }
 
 
 
-//start animation, stop animation
-fn timeline_control_animation<T:AnimatableValue<Out>,Out:Component>(
+//Here we check the player's state and insert the animation flag into the bound entity
+fn timeline_control_animation<K:AnimatableValue>(
     mut commands: Commands,
     time: Res<Time>,
-    assets: Res<Assets<Timeline<T>>>,
+    assets: Res<Assets<Timeline<K>>>,
     world: &mut World,
     players: Query<(Entity, &mut TimelinePlayer)>,
-    childs: Query<(Entity, &Out, &TLInactive)>,
+    childs: Query<(Entity, &mut K::Target), Without(TLActive)>,
 ) {
     for (entity,player) in players.iter() {
         let anim_handle = player.play_list();
@@ -68,6 +62,7 @@ fn timeline_control_animation<T:AnimatableValue<Out>,Out:Component>(
                 let target = anim.get_target( target );
                 if let Some(transform) = world.get_mut::<Transform>(*entity) {
                     //entity_mut.get::<Transform>();
+                    //get frames and interpolate
                 }
             }
         }
@@ -75,14 +70,17 @@ fn timeline_control_animation<T:AnimatableValue<Out>,Out:Component>(
 }
 
 
-//interploate keyframe, stop animation
-fn timeline_step_animation(
+// From here, the animation is interpolated and output to the actual animation target.
+// Once the animation has ended, we remove the animation flag from the bound entity.
+fn timeline_step_animation<K:AnimatableValue>(
     mut commands: Commands,
     time: Res<Time>,
     assets: Res<Assets<Timeline>>,
-    world: &mut World,
     players: Query<(Entity, &mut TimelinePlayer)>,
+    inactives: Query<(Entity, &mut K::Target), With<TLActive>>,
+    actives: Query<(Entity, &mut K::Target), With<TLActive>>,
 ) {
+
     for (entity,player) in players.iter() {
         let anim_handle = player.play_list();
         if let Some(anim) = assets.get(anim_handle) {

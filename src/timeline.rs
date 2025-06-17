@@ -1,29 +1,48 @@
+use std::borrow::Cow;
 use std::marker::PhantomData;
+use std::string::ToString;
 use bevy_reflect::TypePath;
 use bevy_asset::{Asset};
+use bevy_reflect::erased_serde::__private::serde::Deserializer;
 use bevy_transform::prelude::Transform;
 use crate::value::{AnimatableValue, TLTransform};
 
-pub struct Keyframe<V:AnimatableValue<Out>, Out> {
+#[cfg(feature = "json_serialize")]
+use serde_json::Value;
+
+pub struct Keyframe<V:AnimatableValue> {
     pub time:f32,
     pub value:V,
-    inner : PhantomData<Out>
 }
 
-impl <V:AnimatableValue<Out>,Out> Keyframe<V,Out> {
-    pub fn new(time:f32,value:V) -> Keyframe<V, Out> {
-        Self { time, value, inner : PhantomData }
+impl <V:AnimatableValue> Keyframe<V> {
+    pub fn new(time:f32,value:V) -> Keyframe<V> {
+        Self { time, value }
     }
 
-    pub fn lerp(&self, elapsed:f32, next:&Keyframe<V,Out>, out:&mut V) {
-        self.value.interpolate(elapsed, &next.value, out);
+    pub fn interpolate(&self, s:f32, next:&Keyframe<V>, out:&mut V::Target) {
+        self.value.interpolate(s, &next.value, out);
+    }
+}
+
+#[cfg(feature="json_serialize")]
+mod group {
+    use serde_json::Value;
+
+    pub struct TimelineTrack {
+        pub typ: String,
+        pub name: String,
+        pub raw_keyframes: Vec<Value>,
+    }
+    pub struct TimelineGroupBulk {
+        duration : f32,
+        track : Vec<TimelineTrack>
     }
 }
 
 #[derive(TypePath,Asset)]
-pub struct Timeline<K=TLTransform,Out=Transform> {
-    playtime : f32,
-    frames : Vec<Keyframe<K,Out>>
+pub struct Timeline<K=TLTransform> {
+    frames : Vec<Keyframe<K>>
 }
 
 impl <K> Default for Timeline<K> where K:AnimatableValue + Asset {
@@ -65,7 +84,7 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
         (before.map(|idx| &self.frames[idx]), next.map(|idx| &self.frames[idx]))
     }
 
-    pub fn lerp(&self, anim_time:f32, out:&mut K) {
+    pub fn lerp(&self, anim_time:f32, out:&mut K::Target) {
         let (bef,next) = self.find_keyframe_pair(anim_time);
         match (bef, next) {
             (Some(bef), None) => {
@@ -73,17 +92,32 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
             }
             (None, Some(next)) => {
                 //no start keyframe
-                todo!()
             }
             (Some(bef), Some(next)) => {
                 let time_diff = next.time - bef.time;
-                let elapsed = (anim_time - bef.time) / time_diff;
-                bef.lerp(elapsed, next, out);
+                let s = (anim_time - bef.time) / time_diff;
+                bef.interpolate(s, next, out);
             }
             (None, None) => {
                 //No frames
             }
         }
+    }
+
+    #[cfg(feature="json_serialize")]
+    fn from_value(value:&Value) -> Result<Self<K>, Cow<'static,str>> {
+        const KEY_TIME:Value = Value::String("time".to_string());
+        let keyframes = value.as_array().ok_or( Cow::Borrowed("value is not array('keyframes')") )?;
+        let mut frames = Vec::with_capacity(keyframes.len());
+        for key in keyframes {
+            let map = key.as_object().ok_or( Cow::Borrowed("value is not object(`keyframe`)") )?;
+            let time = map.get("time").ok_or( Cow::Borrowed("time not exist in keyframe") )?
+                .as_number().ok_or( Cow::Borrowed("time is not a number") )?
+                .as_f64().unwrap() as f32;
+            let data = K::from_value( map.get("data").ok_or( Cow::Borrowed("data not exist in keyframe") )? )?;
+            frames.push( Keyframe::new(time, data) );
+        }
+        Ok( Self { frames } )
     }
 }
 
