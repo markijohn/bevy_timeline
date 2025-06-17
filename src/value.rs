@@ -1,5 +1,8 @@
 use std::borrow::Cow;
+use bevy_ecs::component::Mutable;
+use bevy_reflect::TypePath;
 use bevy_ecs::prelude::Component;
+use bevy_ecs::query::QueryData;
 use bevy_math::{Vec3, Quat};
 use bevy_transform::prelude::{Transform};
 
@@ -7,7 +10,7 @@ use bevy_transform::prelude::{Transform};
 use serde_json::Value;
 
 pub trait AnimatableValue {
-    type Target: Component;
+    type Target: Component<Mutability=Mutable>;
     fn interpolate(&self, s:f32, next:&Self, out:&mut Self::Target);
 
     #[cfg(feature="json_serialize")]
@@ -91,6 +94,7 @@ impl AnimatableValue for Rotation {
     }
 }
 
+#[derive(TypePath)]
 pub struct TLTransform {
     pub scale: Option<Scale>,
     pub rotation: Option<Rotation>,

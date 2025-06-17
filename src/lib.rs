@@ -18,78 +18,110 @@ mod player;
 mod timeline;
 mod value;
 
+pub use value::{AnimatableValue, TLTransform};
+pub use player::{TimelinePlayer, TimelineSession};
+pub use timeline::{Timeline};
+
 use std::marker::PhantomData;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_time::Time;
 use bevy_transform::prelude::*;
 use bevy_asset::prelude::*;
-use crate::player::TimelinePlayer;
-use crate::timeline::Timeline;
-use crate::value::AnimatableValue;
+use bevy_ecs::query::QueryData;
+use bevy_reflect::TypePath;
 
+
+// Timeline animation set
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub enum AnimationSystemSet {
+    Prepare,
+    Update,
+    Finalize,
+}
 
 #[derive(Component)]
 struct TLActive;
 
-pub struct TimelinePlugin<K> where K:AnimatableValue + 'static {
-    inner : PhantomData<K>,
-}
+pub struct TimelinePlugin;
 
-impl <K> Plugin for TimelinePlugin<K> where K:AnimatableValue + Send + Sync + 'static {
+impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
+        app.configure_sets(
+            PostUpdate,
+            (
+                AnimationSystemSet::Prepare,
+                AnimationSystemSet::Update,
+                AnimationSystemSet::Finalize,
+            ).chain()
+        );
         app
-            .add_systems(PostUpdate, timeline_control_animation::<K>.chain(timeline_step_animation::<K>) )
+            .add_systems(PostUpdate, timeline_prepare.in_set(AnimationSystemSet::Prepare))
+            .add_systems(PostUpdate, timeline_step::<TLTransform>.in_set(AnimationSystemSet::Update) )
+            .add_systems(PostUpdate, timeline_finalize.in_set(AnimationSystemSet::Finalize))
         ;
     }
 }
 
 
-
-//Here we check the player's state and insert the animation flag into the bound entity
-fn timeline_control_animation<K:AnimatableValue>(
-    mut commands: Commands,
-    time: Res<Time>,
-    assets: Res<Assets<Timeline<K>>>,
-    world: &mut World,
-    players: Query<(Entity, &mut TimelinePlayer)>,
-    childs: Query<(Entity, &mut K::Target), Without(TLActive)>,
-) {
-    for (entity,player) in players.iter() {
-        let anim_handle = player.play_list();
-        if let Some(anim) = assets.get(anim_handle) {
-            for (target, entity) in player.binded_targets() {
-                let target = anim.get_target( target );
-                if let Some(transform) = world.get_mut::<Transform>(*entity) {
-                    //entity_mut.get::<Transform>();
-                    //get frames and interpolate
-                }
-            }
-        }
-    }
+fn timeline_prepare() {
+    
 }
 
+fn timeline_finalize() {
+    
+}
 
 // From here, the animation is interpolated and output to the actual animation target.
 // Once the animation has ended, we remove the animation flag from the bound entity.
-fn timeline_step_animation<K:AnimatableValue>(
+fn timeline_step<K:AnimatableValue>(
     mut commands: Commands,
     time: Res<Time>,
-    assets: Res<Assets<Timeline>>,
+    assets: Res<Assets<Timeline<K>>>,
     players: Query<(Entity, &mut TimelinePlayer)>,
     inactives: Query<(Entity, &mut K::Target), With<TLActive>>,
     actives: Query<(Entity, &mut K::Target), With<TLActive>>,
-) {
+) where K:AnimatableValue+Send+Sync+TypePath {
 
-    for (entity,player) in players.iter() {
-        let anim_handle = player.play_list();
-        if let Some(anim) = assets.get(anim_handle) {
-            for (target, entity) in player.binded_targets() {
-                let target = anim.get_target( target );
-                if let Some(transform) = world.get_mut::<Transform>(*entity) {
-                    //entity_mut.get::<Transform>();
-                }
-            }
-        }
+    //Find plyaing session and enable timeline
+    // for (entity, target) in inactives.iter() {
+    //     for (_player_entity, player) in players.iter() {
+    //         for (anim_name, session) in player.playing_sessions() {
+    //             if let Some(find_my_entity) = session.binded_targets().iter().find( |e| **e == entity ) {
+    //                 commands.entity(*find_my_entity).insert( TLActive );
+    //             }
+    //         }
+    //     }
+    // }
+    // for (entity,player) in players.iter() {
+    //     let anim_handle = player.play_list();
+    //     if let Some(anim) = assets.get(anim_handle) {
+    //         for (target, entity) in player.binded_targets() {
+    //             let target = anim.get_target( target );
+    //             if let Some(transform) = world.get_mut::<Transform>(*entity) {
+    //                 //entity_mut.get::<Transform>();
+    //             }
+    //         }
+    //     }
+    // }
+}
+
+pub struct CustomTimelinePlugin<K> where K:AnimatableValue + 'static {
+    inner : PhantomData<K>,
+}
+
+impl <K> Plugin for CustomTimelinePlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
+    fn build(&self, app: &mut App) {
+        app.configure_sets(
+            PostUpdate,
+            (
+                AnimationSystemSet::Prepare,
+                AnimationSystemSet::Update,
+                AnimationSystemSet::Finalize,
+            ).chain()
+        );
+        app
+            .add_systems(PostUpdate, timeline_step::<K>.in_set(AnimationSystemSet::Update) );
+        ;
     }
 }

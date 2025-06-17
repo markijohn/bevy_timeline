@@ -3,7 +3,6 @@ use std::marker::PhantomData;
 use std::string::ToString;
 use bevy_reflect::TypePath;
 use bevy_asset::{Asset};
-use bevy_reflect::erased_serde::__private::serde::Deserializer;
 use bevy_transform::prelude::Transform;
 use crate::value::{AnimatableValue, TLTransform};
 
@@ -41,7 +40,7 @@ mod group {
 }
 
 #[derive(TypePath,Asset)]
-pub struct Timeline<K=TLTransform> {
+pub struct Timeline<K=TLTransform> where K:AnimatableValue+Send+Sync+TypePath {
     frames : Vec<Keyframe<K>>
 }
 

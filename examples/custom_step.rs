@@ -1,1 +1,4 @@
-/// get animated value and control
+/// get animated value and 
+fn main() {
+    todo!()
+}
