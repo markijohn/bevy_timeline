@@ -89,7 +89,7 @@ fn finalize(
     mut commands: Commands,
     players: Query<&mut TimelinePlayer>,
 ) {
-    for player in players {
+    for mut player in players {
         player.reset_mark();
     }
 }

@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_timeline::TimelinePlugin;
+use bevy_timeline::{TimelinePlayer, TimelinePlugin};
 
 fn main() {
     App::new()
@@ -14,7 +14,6 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut timelines: ResMut<Assets<Timeline>>
 ) {
     // circular base
     commands.spawn((
@@ -27,7 +26,7 @@ fn setup(
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 0.5, 0.0),
-        TimelinePlayer( timeline_handle ),
+        TimelinePlayer::new(),
     ));
     // light
     commands.spawn((
@@ -41,6 +40,7 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        TimelinePlayer
     ));
 
     let timeline = Timeline::new();

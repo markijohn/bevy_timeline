@@ -40,40 +40,32 @@ impl TimelineSession {
         }
         self.is_playing = false;
     }
+    
+    pub fn count_time(&mut self, elapsed:f32) {
+        self.progress += elapsed;
+    }
 
     pub fn reset_mark(&mut self) {
         self.mark_changed = false;
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct TimelinePlayer {
     sessions : HashMap<Cow<'static,str>, TimelineSession>
 }
 
 impl TimelinePlayer {
-    pub fn playing_sessions(&self, mark_changed:Option<bool>) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
-        self.sessions.iter().filter( | (_,s)| {
-            if let Some(flag) = mark_changed {
-                s.mark_changed == flag && s.is_playing
-            } else {
-                s.is_playing
-            }
-        })
+    pub fn new() -> Self {
+        Default::default()
     }
-
-    pub fn stoped_sessions(&self, mark_changed:Option<bool>) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
-        self.sessions.iter().filter( | (_,s)| {
-            if let Some(flag) = mark_changed {
-                s.mark_changed == flag && !s.is_playing
-            } else {
-                !s.is_playing
-            }
-        })
-    }
-
+    
     pub fn sessions(&self) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
         self.sessions.iter()
+    }
+
+    pub fn sessions_mut(&mut self) -> impl Iterator<Item=(&Cow<'static,str>, &mut TimelineSession)> {
+        self.sessions.iter_mut()
     }
     
     pub fn play(&mut self, name:&str) -> Option<bool> {
