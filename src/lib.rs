@@ -18,6 +18,8 @@ mod player;
 mod timeline;
 mod value;
 
+use std::borrow::Cow;
+use std::collections::HashMap;
 pub use value::{AnimatableValue, TLTransform};
 pub use player::{TimelinePlayer, TimelineSession};
 pub use timeline::{Timeline};
@@ -43,6 +45,12 @@ pub enum AnimationSystemSet {
 #[derive(Component)]
 struct TLActive;
 
+#[derive(Component)]
+struct TimelineStep( HashMap<Cow<'static,str>, f32> );
+
+#[derive(Component)]
+struct TimelineHandleCache<K>( HashMap<Cow<'static,str>, Handle<Timeline<K>>> );
+
 pub struct TimelinePlugin;
 
 impl Plugin for TimelinePlugin {
@@ -56,33 +64,50 @@ impl Plugin for TimelinePlugin {
             ).chain()
         );
         app
-            .add_systems(PostUpdate, timeline_prepare.in_set(AnimationSystemSet::Prepare))
-            .add_systems(PostUpdate, timeline_step::<TLTransform>.in_set(AnimationSystemSet::Update) )
-            .add_systems(PostUpdate, timeline_finalize.in_set(AnimationSystemSet::Finalize))
+            .add_systems(PostUpdate, prepare_animation.in_set(AnimationSystemSet::Prepare))
+            .add_systems(PostUpdate, consume_step::<TLTransform>.in_set(AnimationSystemSet::Update) )
+            .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
         ;
     }
 }
 
+//Remove expired and stopped session
+fn prepare_animation<K:AnimatableValue>(
+    mut commands: Commands,
+    time: Res<Time>,
+    assets: Res<Assets<Timeline<K>>>,
+    entity_players: Query<(&mut TimelinePlayer, Children)>,
+    inactives: Query<(Entity, &mut K::Target), With<TLActive>>,
+    actives: Query<(Entity, &mut K::Target), With<TLActive>>,
+) where K:AnimatableValue+Send+Sync+TypePath {
+    for player in entity_players {
 
-fn timeline_prepare() {
-    
+    }
 }
 
-fn timeline_finalize() {
-    
+fn finalize(
+    mut commands: Commands,
+    players: Query<&mut TimelinePlayer>,
+) {
+    for player in players {
+        player.reset_mark();
+    }
 }
 
 // From here, the animation is interpolated and output to the actual animation target.
 // Once the animation has ended, we remove the animation flag from the bound entity.
-fn timeline_step<K:AnimatableValue>(
+fn consume_step<K:AnimatableValue>(
     mut commands: Commands,
-    time: Res<Time>,
     assets: Res<Assets<Timeline<K>>>,
-    players: Query<(Entity, &mut TimelinePlayer)>,
-    inactives: Query<(Entity, &mut K::Target), With<TLActive>>,
-    actives: Query<(Entity, &mut K::Target), With<TLActive>>,
+    active_anim_entities: Query<(Entity, &mut K::Target, &TimelineStep, &TimelineHandleCache<K>)>,
 ) where K:AnimatableValue+Send+Sync+TypePath {
-
+    for (entity, out, step, cache) in active_anim_entities.iter() {
+        for (anim_key, time) in step.iter() {
+            let timeline = assets.get( cache.get(anim_key).unwrap() ).unwrap();
+            timeline.interpolate( time, out );
+            commands.remove::<TimelineStep>( entity );
+        }
+    }
     //Find plyaing session and enable timeline
     // for (entity, target) in inactives.iter() {
     //     for (_player_entity, player) in players.iter() {
@@ -121,7 +146,7 @@ impl <K> Plugin for CustomTimelinePlugin<K> where K:AnimatableValue + Send + Syn
             ).chain()
         );
         app
-            .add_systems(PostUpdate, timeline_step::<K>.in_set(AnimationSystemSet::Update) );
+            .add_systems(PostUpdate, consume_step::<K>.in_set(AnimationSystemSet::Update) );
         ;
     }
 }

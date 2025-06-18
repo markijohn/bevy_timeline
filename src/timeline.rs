@@ -83,7 +83,7 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
         (before.map(|idx| &self.frames[idx]), next.map(|idx| &self.frames[idx]))
     }
 
-    pub fn lerp(&self, anim_time:f32, out:&mut K::Target) {
+    pub fn interpolate(&self, anim_time:f32, out:&mut K::Target) {
         let (bef,next) = self.find_keyframe_pair(anim_time);
         match (bef, next) {
             (Some(bef), None) => {

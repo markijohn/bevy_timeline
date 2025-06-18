@@ -8,6 +8,7 @@ use crate::timeline::Timeline;
 pub struct TimelineSession {
     is_loop : bool,
     is_loop_interpolation : bool,
+    mark_changed : bool,
     is_playing : bool,
     duration : f32,
     progress : f32,
@@ -23,19 +24,26 @@ impl TimelineSession {
 
     pub fn play(&mut self) {
         self.progress = 0.;
-        self.is_playing = true;
+        self.resume();
     }
 
     pub fn resume(&mut self) {
+        if !self.is_playing {
+            self.mark_changed = true;
+        }
         self.is_playing = true;
     }
 
     pub fn stop(&mut self) {
         if self.is_playing {
+            self.mark_changed = true;
         }
         self.is_playing = false;
     }
-    
+
+    pub fn reset_mark(&mut self) {
+        self.mark_changed = false;
+    }
 }
 
 #[derive(Component)]
@@ -44,12 +52,28 @@ pub struct TimelinePlayer {
 }
 
 impl TimelinePlayer {
-    pub fn changed_playing_sessions(&self) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
-        self.sessions.iter().filter( | (_,s)| s.is_playing )
+    pub fn playing_sessions(&self, mark_changed:Option<bool>) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
+        self.sessions.iter().filter( | (_,s)| {
+            if let Some(flag) = mark_changed {
+                s.mark_changed == flag && s.is_playing
+            } else {
+                s.is_playing
+            }
+        })
     }
-    
-    pub fn idle_sessions(&self) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
-        self.sessions.iter().filter( | (_,s)| !s.is_playing )
+
+    pub fn stoped_sessions(&self, mark_changed:Option<bool>) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
+        self.sessions.iter().filter( | (_,s)| {
+            if let Some(flag) = mark_changed {
+                s.mark_changed == flag && !s.is_playing
+            } else {
+                !s.is_playing
+            }
+        })
+    }
+
+    pub fn sessions(&self) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
+        self.sessions.iter()
     }
     
     pub fn play(&mut self, name:&str) -> Option<bool> {
@@ -86,14 +110,10 @@ impl TimelinePlayer {
             e.stop();
         })
     }
-    
-    pub fn targets(&self, is_playing:bool) -> Vec<&Entity> {
-        let mut vec = Vec::new();
-        for session in self.sessions.values() {
-            if session.is_playing == is_playing {
-                vec.extend(session.binded_targets());
-            }
-        }
-        vec
+
+    pub fn reset_mark(&mut self) {
+        self.sessions.values_mut().for_each( |e| {
+            e.reset_mark();
+        })
     }
 }
