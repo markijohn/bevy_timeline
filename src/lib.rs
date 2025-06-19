@@ -31,7 +31,9 @@ use bevy_time::Time;
 use bevy_transform::prelude::*;
 use bevy_asset::prelude::*;
 use bevy_ecs::query::QueryData;
+use bevy_reflect::erased_serde::__private::serde;
 use bevy_reflect::TypePath;
+use serde_json::Value;
 
 
 // Timeline animation set
@@ -42,8 +44,8 @@ pub enum AnimationSystemSet {
     Finalize,
 }
 
-#[derive(Component)]
-struct TLActive;
+#[derive(serde::Deserialize, TypePath,Asset)]
+struct TimelineRawData(Value);
 
 #[derive(Component)]
 struct TimelineStep( HashMap<Cow<'static,str>, f32> );
@@ -72,6 +74,7 @@ impl Plugin for TimelinePlugin {
 }
 
 //Remove expired and stopped session
+//Mark step
 fn prepare_animation<K:AnimatableValue>(
     mut commands: Commands,
     time: Res<Time>,

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use bevy_asset::prelude::*;
 use bevy_ecs::prelude::*;
 use crate::timeline::Timeline;
+use crate::TimelineRawData;
 
 
 pub struct TimelineSession {
@@ -58,6 +59,10 @@ pub struct TimelinePlayer {
 impl TimelinePlayer {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn create_session(&mut self, label:&'static str, handle:Handle<TimelineRawData>) {
+
     }
     
     pub fn sessions(&self) -> impl Iterator<Item=(&Cow<'static,str>, &TimelineSession)> {
