@@ -8,7 +8,7 @@ use bevy_transform::prelude::{Transform};
 
 use serde_json::{json,Value};
 
-pub trait AnimatableValue:TypePath {
+pub trait AnimatableValue:TypePath+Sized {
     type Target: Component<Mutability=Mutable>;
     fn interpolate(&self, s:f32, next:&Self, out:&mut Self::Target);
 
