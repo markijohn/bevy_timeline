@@ -17,7 +17,6 @@
 mod player;
 mod timeline;
 mod value;
-mod value;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
