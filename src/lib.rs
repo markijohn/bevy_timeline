@@ -17,6 +17,8 @@
 mod player;
 mod timeline;
 mod value;
+mod loader;
+mod data;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -31,9 +33,14 @@ use bevy_time::Time;
 use bevy_transform::prelude::*;
 use bevy_asset::prelude::*;
 use bevy_ecs::query::QueryData;
-use bevy_reflect::erased_serde::__private::serde;
 use bevy_reflect::TypePath;
+use serde::Deserialize;
 use serde_json::Value;
+use crate::data::TimelineRawData;
+use crate::loader::TimelineRawDataLoader;
+
+#[derive(Resource)]
+pub struct TimelineUntypedCache(HashMap<Handle<TimelineRawData>, HashMap<String, UntypedHandle>>);
 
 
 // Timeline animation set
@@ -44,19 +51,19 @@ pub enum AnimationSystemSet {
     Finalize,
 }
 
-#[derive(serde::Deserialize, TypePath,Asset)]
-struct TimelineRawData(Value);
+#[derive(Component)]
+pub struct TimelineTargetRebind;
 
 #[derive(Component)]
-struct TimelineStep( HashMap<Cow<'static,str>, f32> );
+struct TimelineStep( Vec< (Cow<'static,str>, f32) > );
 
-#[derive(Component)]
-struct TimelineHandleCache<K>( HashMap<Cow<'static,str>, Handle<Timeline<K>>> );
 
 pub struct TimelinePlugin;
 
 impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
+        app.init_asset::<TimelineRawData>()
+            .register_asset_loader(TimelineRawDataLoader);
         app.configure_sets(
             PostUpdate,
             (
@@ -66,10 +73,77 @@ impl Plugin for TimelinePlugin {
             ).chain()
         );
         app
-            .add_systems(PostUpdate, prepare_animation.in_set(AnimationSystemSet::Prepare))
+            .add_systems(PostUpdate, bind_targets.in_set(AnimationSystemSet::Prepare))
             .add_systems(PostUpdate, consume_step::<TLTransform>.in_set(AnimationSystemSet::Update) )
             .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
         ;
+    }
+}
+
+fn bind_targets(
+    mut cmds:Commands,
+    time: Res<Time>,
+    assets: Res<Assets<TimelineRawData>>,
+    //mut players_force_rebinder: Query<(&mut TimelinePlayer, &Children), With<TimelineMarkBind> >,
+    mut players: Query<(&mut TimelinePlayer, &Children), Added<TimelinePlayer> >,
+    has_childs:Query<(Entity,&Name,&Children)>,
+    last_level_childs:Query<(Entity,&Name), Without<Children>>,
+) {
+    //TODO : remove end animate session
+    
+    //Collect required target entity
+    for (mut player, children) in players.iter_mut() {
+        
+        let targets = player.targets_mut();
+        let mut dig = children.iter().collect::<Vec<Entity>>();
+
+        while dig.len() > 0 {
+            let Some(next) = dig.pop() else { break };
+            if let Ok( (dig_under, name, children) ) = has_childs.get(next) {
+                //bind exist target
+                if targets.contains_key( name.as_str() ) {
+                    targets.insert( Cow::Owned(name.as_str().to_string()), Some(dig_under.clone()) );
+                    dig.extend( children.iter().collect::<Vec<Entity>>() );
+                }
+            } else {
+                if let Ok((entity, name)) = last_level_childs.get(next) {
+                    //bind exist target
+                    if targets.contains_key( name.as_str() ) {
+                        targets.insert( Cow::Owned(name.as_str().to_string()), Some(entity.clone()) );
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn resolve_keyframes<K>(
+    timeilne_assets: Res<Assets<TimelineRawData>>,
+    resolve_assets: ResMut<Assets<Timeline<K>>>,
+    mut players: Query<&mut TimelinePlayer, Added<TimelinePlayer>>,
+    target_query: Query<&mut K::Target, With<Name>>,
+) where K:AnimatableValue+Send+Sync+TypePath {
+    //find exist resolved animation
+}
+
+
+fn animate_step<K>(
+    mut cmds: Commands,
+    anim_cache: Res<TimelineUntypedCache>,
+    keyframes: Res<Assets<Timeline<K>>>,
+    players: Query<(&TimelinePlayer)>,
+    target_query: Query<&mut K::Target, With<Name>>
+) where K:AnimatableValue+Send+Sync+TypePath {
+    for player in players.iter() {
+        for (_name, session) in player.sessions().filter( | (_,s)| s.is_playing ) {
+            for (target_entity, untyped_timeline_handle) = session.binded_targets() {
+                if let Ok( target ) = target_query.get(target_entity) {
+                    //get animatable
+                    let timeline = untyped_timeline_handle.typed::<Timeline<K>>();
+                    session.interpolate( timeline, target );
+                }
+            }
+        }
     }
 }
 
@@ -79,9 +153,9 @@ fn prepare_animation<K:AnimatableValue>(
     mut commands: Commands,
     time: Res<Time>,
     assets: Res<Assets<Timeline<K>>>,
-    entity_players: Query<(&mut TimelinePlayer, Children)>,
-    inactives: Query<(Entity, &mut K::Target), With<TLActive>>,
-    actives: Query<(Entity, &mut K::Target), With<TLActive>>,
+    entity_players: Query<(&mut TimelinePlayer, &Children)>,
+    inactives: Query<(Entity, &mut K::Target)>,
+    actives: Query<(Entity, &mut K::Target)>,
 ) where K:AnimatableValue+Send+Sync+TypePath {
     for player in entity_players {
 

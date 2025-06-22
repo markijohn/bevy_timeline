@@ -6,20 +6,19 @@ use crate::timeline::Timeline;
 use crate::TimelineRawData;
 
 
-pub struct TimelineSession {
-    is_loop : bool,
-    is_loop_interpolation : bool,
-    mark_changed : bool,
-    is_playing : bool,
-    duration : f32,
-    progress : f32,
-    speed : f32,
-    
-    binded_targets : Vec<Entity>
+pub struct TimelineAnimation {
+    pub is_loop : bool,
+    pub is_loop_interpolation : bool,
+    pub mark_changed : bool,
+    pub is_playing : bool,
+    pub duration : f32,
+    pub progress : f32,
+    pub speed : f32,
 }
 
-impl TimelineSession {
-    pub fn binded_targets(&self) -> &[Entity] {
+impl TimelineAnimation {
+    
+    pub fn binded_targets(&self) -> &[(Entity,UntypedHandle)] {
         self.binded_targets.as_slice()
     }
 
@@ -53,12 +52,31 @@ impl TimelineSession {
 
 #[derive(Component, Default)]
 pub struct TimelinePlayer {
-    sessions : HashMap<Cow<'static,str>, TimelineSession>
+    sessions : HashMap<Cow<'static,str>, TimelineSession>,
+    binded_targets : HashMap<Cow<'static,str>, Option<Entity>>,
 }
 
 impl TimelinePlayer {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn targets_mut(&mut self) -> &mut HashMap<Cow<'static,str>, Option<Entity>> {
+        &mut self.binded_targets
+    }
+
+    pub fn load_all(self, data:Handle<TimelineRawData>) -> Self {
+        self.load(data, None)
+    }
+
+    pub fn load(self, data:Handle<TimelineRawData>, import_anims:Option<&[&str]>) -> Self {
+        for (name, anim) in data.anims.iter() {
+            if import_anims.is_none() ||
+                import_anims.unwrap().iter().find( |s| **s == name.as_str() ).is_some() {
+
+            }
+        }
+        self
     }
 
     pub fn create_session(&mut self, label:&'static str, handle:Handle<TimelineRawData>) {
