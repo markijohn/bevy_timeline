@@ -3,20 +3,32 @@ use std::collections::HashMap;
 use bevy_asset::prelude::*;
 use bevy_ecs::prelude::*;
 use crate::timeline::Timeline;
-use crate::TimelineRawData;
+use crate::{TimelineId, TimelineRawData};
 
+pub enum TimelinePlayMode {
+    ExactMatch,
+    CropOrExtendEnd(f32),
+    CropOrExtendStart(f32),
+    Stretch(f32)
+}
 
-pub struct TimelineAnimation {
+#[derive(Component)]
+pub enum TimelineManualStep {
+    Rate(f32), // step = duration * rate
+    Time(f32), // step = $param / duration
+}
+
+pub struct TimelineSession {
     pub is_loop : bool,
     pub is_loop_interpolation : bool,
-    pub mark_changed : bool,
     pub is_playing : bool,
     pub duration : f32,
     pub progress : f32,
     pub speed : f32,
+    pub play_mode : TimelinePlayMode,
 }
 
-impl TimelineAnimation {
+impl TimelineSession {
     
     pub fn binded_targets(&self) -> &[(Entity,UntypedHandle)] {
         self.binded_targets.as_slice()
@@ -28,32 +40,27 @@ impl TimelineAnimation {
     }
 
     pub fn resume(&mut self) {
-        if !self.is_playing {
-            self.mark_changed = true;
-        }
         self.is_playing = true;
     }
 
     pub fn stop(&mut self) {
-        if self.is_playing {
-            self.mark_changed = true;
-        }
         self.is_playing = false;
     }
     
     pub fn count_time(&mut self, elapsed:f32) {
         self.progress += elapsed;
     }
+}
 
-    pub fn reset_mark(&mut self) {
-        self.mark_changed = false;
-    }
+pub struct TimelineAnimation {
+    id : TimelineId,
+    binded_targets : Vec<Entity>
 }
 
 #[derive(Component, Default)]
 pub struct TimelinePlayer {
     sessions : HashMap<Cow<'static,str>, TimelineSession>,
-    binded_targets : HashMap<Cow<'static,str>, Option<Entity>>,
+    binded_targets : HashMap<Handle<TimelineRawData>, Option<Entity>>,
 }
 
 impl TimelinePlayer {

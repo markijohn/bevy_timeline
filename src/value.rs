@@ -21,7 +21,7 @@ pub trait AnimatableValue:TypePath+Sized {
     }
 
     fn anim_type() -> &'static str {
-        Self::type_ident().unwrap()
+        Self::type_path()
     }
 }
 
@@ -118,14 +118,4 @@ impl AnimatableValue for Translation {
         let translation = self.0;
         Value::Array(vec![Value::from(translation.x), Value::from(translation.y), Value::from(translation.z)])
     }
-}
-
-enum PlayMode {
-    Crop(Begin),
-}
-
-#[derive(TypePath)]
-pub struct AnimationTrack {
-    anim_name : String,
-    play_mode :
 }

@@ -22,7 +22,7 @@ mod data;
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-pub use value::{AnimatableValue, TLTransform};
+pub use value::{AnimatableValue, Scale, Rotation, Translation};
 pub use player::{TimelinePlayer, TimelineSession};
 pub use timeline::{Timeline};
 
@@ -39,8 +39,16 @@ use serde_json::Value;
 use crate::data::TimelineRawData;
 use crate::loader::TimelineRawDataLoader;
 
+
+#[derive(Hash, Copy, Clone, PartialEq, Eq)]
+pub struct TimelineId {
+    data_handle: Handle<TimelineRawData>,
+    anim_idx: usize,
+    target_idx: usize,
+}
+
 #[derive(Resource)]
-pub struct TimelineUntypedCache(HashMap<Handle<TimelineRawData>, HashMap<String, UntypedHandle>>);
+pub struct TimelineUntypedCache(HashMap<TimelineId, Vec<UntypedHandle>>);
 
 
 // Timeline animation set
@@ -53,9 +61,6 @@ pub enum AnimationSystemSet {
 
 #[derive(Component)]
 pub struct TimelineTargetRebind;
-
-#[derive(Component)]
-struct TimelineStep( Vec< (Cow<'static,str>, f32) > );
 
 
 pub struct TimelinePlugin;
@@ -72,9 +77,14 @@ impl Plugin for TimelinePlugin {
                 AnimationSystemSet::Finalize,
             ).chain()
         );
+        app.add_event::<Scale>()
+            .add_event::<Rotation>()
+            .add_event::<Translation>();
         app
             .add_systems(PostUpdate, bind_targets.in_set(AnimationSystemSet::Prepare))
-            .add_systems(PostUpdate, consume_step::<TLTransform>.in_set(AnimationSystemSet::Update) )
+            .add_systems(PostUpdate, consume_step::<Scale>.in_set(AnimationSystemSet::Update) )
+            .add_systems(PostUpdate, consume_step::<Rotation>.in_set(AnimationSystemSet::Update) )
+            .add_systems(PostUpdate, consume_step::<Translation>.in_set(AnimationSystemSet::Update) )
             .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
         ;
     }
@@ -117,6 +127,13 @@ fn bind_targets(
     }
 }
 
+fn propagete_step_event<K>(
+    players: Query<&mut TimelinePlayer>,
+    step_writer: EventWriter<TimelineStepEvent<K>>,
+) where K:AnimatableValue+Send+Sync+TypePath {
+
+}
+
 fn resolve_keyframes<K>(
     timeilne_assets: Res<Assets<TimelineRawData>>,
     resolve_assets: ResMut<Assets<Timeline<K>>>,
@@ -146,6 +163,30 @@ fn animate_step<K>(
         }
     }
 }
+
+#[derive(Event)]
+pub struct TimelineStepEvent<K> {
+    entity: Entity,
+    resovled_target_id: TimelineCacheId,
+    inner: PhantomData<K>
+}
+
+
+fn consume_animation_step<K>(
+    keyframes: Res<Assets<Timeline<K>>>,
+    mut step_reader: EventReader<TimelineStepEvent<K>>,
+    players: Query<(&TimelinePlayer)>,
+    mut target_query: Query<&mut K::Target, With<Name>>
+) where K:AnimatableValue+Send+Sync+TypePath {
+    for event in step_reader.read() {
+        if let Ok(mut target) = target_query.get_mut( event.entity ) {
+            if let Some(timeline) = keyframes.get( event.resovled_target_id.typed_id::<Timeline<K>>() ) {
+                timeline.interpolate( event.progress, target);
+            }
+        }
+    }
+}
+
 
 //Remove expired and stopped session
 //Mark step
@@ -214,14 +255,6 @@ pub struct CustomTimelinePlugin<K> where K:AnimatableValue + 'static {
 
 impl <K> Plugin for CustomTimelinePlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
     fn build(&self, app: &mut App) {
-        app.configure_sets(
-            PostUpdate,
-            (
-                AnimationSystemSet::Prepare,
-                AnimationSystemSet::Update,
-                AnimationSystemSet::Finalize,
-            ).chain()
-        );
         app
             .add_systems(PostUpdate, consume_step::<K>.in_set(AnimationSystemSet::Update) );
         ;
