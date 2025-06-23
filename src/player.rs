@@ -26,11 +26,12 @@ pub struct TimelineSession {
     pub progress : f32,
     pub speed : f32,
     pub play_mode : TimelinePlayMode,
+    binded_targets: HashMap<&'static str, Vec<(Entity,UntypedHandle)>>
 }
 
 impl TimelineSession {
     
-    pub fn binded_targets(&self) -> &[(Entity,UntypedHandle)] {
+    pub fn binded_targets(&self, typ:&'static str) -> &[(Entity,UntypedHandle)] {
         self.binded_targets.as_slice()
     }
 

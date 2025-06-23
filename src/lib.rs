@@ -40,12 +40,13 @@ use crate::data::TimelineRawData;
 use crate::loader::TimelineRawDataLoader;
 
 
-#[derive(Hash, Copy, Clone, PartialEq, Eq)]
+#[derive(Hash, Clone, PartialEq, Eq)]
 pub struct TimelineId {
-    data_handle: Handle<TimelineRawData>,
+    data_handle: AssetId<TimelineRawData>,
     anim_idx: usize,
     target_idx: usize,
 }
+
 
 #[derive(Resource)]
 pub struct TimelineUntypedCache(HashMap<TimelineId, Vec<UntypedHandle>>);
@@ -77,9 +78,9 @@ impl Plugin for TimelinePlugin {
                 AnimationSystemSet::Finalize,
             ).chain()
         );
-        app.add_event::<Scale>()
-            .add_event::<Rotation>()
-            .add_event::<Translation>();
+        app.add_event::<TimelineStepEvent<Scale>>()
+            .add_event::<TimelineStepEvent<Rotation>>()
+            .add_event::<TimelineStepEvent<Translation>>();
         app
             .add_systems(PostUpdate, bind_targets.in_set(AnimationSystemSet::Prepare))
             .add_systems(PostUpdate, consume_step::<Scale>.in_set(AnimationSystemSet::Update) )

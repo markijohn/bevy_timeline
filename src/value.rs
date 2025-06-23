@@ -20,7 +20,7 @@ pub trait AnimatableValue:TypePath+Sized {
         None
     }
 
-    fn anim_type() -> &'static str {
+    fn typ() -> &'static str {
         Self::type_path()
     }
 }
