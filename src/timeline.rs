@@ -4,7 +4,7 @@ use std::string::ToString;
 use bevy_reflect::TypePath;
 use bevy_asset::{Asset};
 use bevy_transform::prelude::Transform;
-use crate::value::{AnimatableValue, TLTransform};
+use crate::value::{AnimatableValue};
 
 #[cfg(feature = "json_serialize")]
 use serde_json::Value;
@@ -40,7 +40,7 @@ mod group {
 }
 
 #[derive(TypePath,Asset)]
-pub struct Timeline<K=TLTransform> where K:AnimatableValue+Send+Sync+TypePath {
+pub struct Timeline<K> where K:AnimatableValue+Send+Sync+TypePath {
     frames : Vec<Keyframe<K>>
 }
 

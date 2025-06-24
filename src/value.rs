@@ -29,25 +29,26 @@ pub trait AnimatableValue:TypePath+Sized {
 pub struct Scale(Vec3);
 
 impl AnimatableValue for Scale {
-    type Target = Vec3;
+    type Target = Transform;
 
     fn interpolate(&self, s: f32, next: &Self, out: &mut Self::Target) {
         let scale = self.0;
         let next_scale = next.0;
+        let out = &mut out.scale;
         out.x = scale.x + (next_scale.x - scale.x) * s;
         out.y = scale.y + (next_scale.y - scale.y) * s;
         out.z = scale.z + (next_scale.z - scale.z) * s;
     }
 
     fn from_value(_version: Option<f32>, value: &Value) -> Result<Self, Cow<'static, str>> {
-        let values = value.as_array().ok_or( Err( Cow::Borrowed("`Scale` keyframe must be [f32;3] array") ) )?;
+        let values = value.as_array().ok_or( Cow::Borrowed("`Scale` keyframe must be [f32;3] array") )?;
         if values.len() != 3 {
             return Err( Cow::Borrowed("`Scale` keyframe must be [f32;3] array") );
         }
         Ok( Self(Vec3::from_array([
-            values[0].as_number().ok_or( Err( Cow::Borrowed("`Scale`[0] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[1].as_number().ok_or( Err( Cow::Borrowed("`Scale`[1] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[2].as_number().ok_or( Err( Cow::Borrowed("`Scale`[2] is not a number(float)") ) )?.as_f64().unwrap() as f32,
+            values[0].as_number().ok_or( Cow::Borrowed("`Scale`[0] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[1].as_number().ok_or( Cow::Borrowed("`Scale`[1] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[2].as_number().ok_or( Cow::Borrowed("`Scale`[2] is not a number(float)") )?.as_f64().unwrap() as f32,
         ])) )
     }
 
@@ -61,23 +62,24 @@ impl AnimatableValue for Scale {
 pub struct Rotation(Quat);
 
 impl AnimatableValue for Rotation {
-    type Target = Quat;
+    type Target = Transform;
 
     fn interpolate(&self, s: f32, next: &Self, out: &mut Self::Target) {
+        let out = &mut out.rotation;
         *out = self.0.slerp( next.0, s);
     }
 
     fn from_value(_version: Option<f32>, value: &Value) -> Result<Self, Cow<'static, str>> {
-        let values = value.as_array().ok_or( Err( Cow::Borrowed("`Rotation` keyframe must be [f32;3] array") ) )?;
+        let values = value.as_array().ok_or( Cow::Borrowed("`Rotation` keyframe must be [f32;3] array") )?;
         if values.len() != 4 {
             return Err( Cow::Borrowed("`Rotation` keyframe must be [f32;3] array") );
         }
 
         Ok( Self(Quat::from_array([
-            values[0].as_number().ok_or( Err( Cow::Borrowed("`Rotation`[0] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[1].as_number().ok_or( Err( Cow::Borrowed("`Rotation`[1] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[2].as_number().ok_or( Err( Cow::Borrowed("`Rotation`[2] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[3].as_number().ok_or( Err( Cow::Borrowed("`Rotation`[3] is not a number(float)") ) )?.as_f64().unwrap() as f32,
+            values[0].as_number().ok_or( Cow::Borrowed("`Rotation`[0] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[1].as_number().ok_or( Cow::Borrowed("`Rotation`[1] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[2].as_number().ok_or( Cow::Borrowed("`Rotation`[2] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[3].as_number().ok_or( Cow::Borrowed("`Rotation`[3] is not a number(float)") )?.as_f64().unwrap() as f32,
         ])) )
     }
 
@@ -92,25 +94,26 @@ impl AnimatableValue for Rotation {
 pub struct Translation(Vec3);
 
 impl AnimatableValue for Translation {
-    type Target = Vec3;
+    type Target = Transform;
 
     fn interpolate(&self, s: f32, next: &Self, out: &mut Self::Target) {
         let translation = self.0;
         let next_translation = next.0;
+        let out = &mut out.translation;
         out.x = translation.x + (next_translation.x - translation.x) * s;
         out.y = translation.y + (next_translation.y - translation.y) * s;
         out.z = translation.z + (next_translation.z - translation.z) * s;
     }
 
     fn from_value(_version: Option<f32>, value: &Value) -> Result<Self, Cow<'static, str>> {
-        let values = value.as_array().ok_or( Err( Cow::Borrowed("`Translation` keyframe must be [f32;3] array") ) )?;
+        let values = value.as_array().ok_or( Cow::Borrowed("`Translation` keyframe must be [f32;3] array") )?;
         if values.len() != 3 {
             return Err( Cow::Borrowed("`Translation` keyframe must be [f32;3] array") );
         }
         Ok( Self(Vec3::from_array([
-            values[0].as_number().ok_or( Err( Cow::Borrowed("`Translation`[0] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[1].as_number().ok_or( Err( Cow::Borrowed("`Translation`[1] is not a number(float)") ) )?.as_f64().unwrap() as f32,
-            values[2].as_number().ok_or( Err( Cow::Borrowed("`Translation`[2] is not a number(float)") ) )?.as_f64().unwrap() as f32,
+            values[0].as_number().ok_or( Cow::Borrowed("`Translation`[0] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[1].as_number().ok_or( Cow::Borrowed("`Translation`[1] is not a number(float)") )?.as_f64().unwrap() as f32,
+            values[2].as_number().ok_or( Cow::Borrowed("`Translation`[2] is not a number(float)") )?.as_f64().unwrap() as f32,
         ])) )
     }
 
