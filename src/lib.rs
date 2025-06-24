@@ -42,14 +42,28 @@ use crate::loader::TimelineRawDataLoader;
 
 #[derive(Hash, Clone, PartialEq, Eq)]
 pub struct TimelineId {
-    data_handle: AssetId<TimelineRawData>,
-    anim_idx: usize,
-    target_idx: usize,
+    pub data_handle: AssetId<TimelineRawData>,
+    pub anim_idx: usize,
+    pub target_idx: usize,
+}
+
+impl TimelineId {
+    pub fn from_data(data:&TimelineRawData, handle:AssetId<TimelineRawData>, anim_name:&str, target_name:&str) -> Option<Self> {
+        let (anim_idx, anim) = data.anims.iter().enumerate().find( |idx, anim| anim.name == anim_name )?;
+        let (target_idx, _target) = anim.targets.iter().enumerate().find( |(idx, target)| target.name == target_name )?;
+        Some( Self {
+            data_handle: handle,
+            anim_idx,
+            target_idx
+        } )
+    }
 }
 
 
-#[derive(Resource)]
-pub struct TimelineUntypedCache(HashMap<TimelineId, Vec<UntypedHandle>>);
+#[derive(Default, Resource)]
+pub struct TimelineUntypedCache<K> {
+    cache: HashMap< TimelineId, Vec<AssetId<Timeline<K>>> >
+}
 
 
 // Timeline animation set
@@ -68,6 +82,10 @@ pub struct TimelinePlugin;
 
 impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
+        app
+            .insert_resource( TimelineUntypedCache::<Scale>::default() )
+            .insert_resource( TimelineUntypedCache::<Rotation>::default() )
+            .insert_resource( TimelineUntypedCache::<Translation>::default() );
         app.init_asset::<TimelineRawData>()
             .register_asset_loader(TimelineRawDataLoader);
         app.configure_sets(

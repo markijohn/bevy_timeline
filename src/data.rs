@@ -12,10 +12,7 @@ pub struct TimelineRawData {
 }
 
 impl TimelineRawData {
-    pub fn get_ids(&self, handle:AssetId<TimelineRawData>) -> Vec<TimelineId> {
-        
-    }
-    pub fn get_timeline(&self, )
+
 }
 
 #[derive(Deserialize)]
@@ -26,6 +23,7 @@ pub struct TimelineAnimationTarget {
 
 #[derive(Deserialize)]
 pub struct TimelineAnimation {
+    pub name: String,
     pub duration: f32,
     pub targets: Vec<TimelineAnimationTarget>,
 }

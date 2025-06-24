@@ -5,33 +5,38 @@ use bevy_ecs::prelude::*;
 use crate::timeline::Timeline;
 use crate::{TimelineId, TimelineRawData};
 
+#[derive(Default)]
 pub enum TimelinePlayMode {
+    #[default]
     ExactMatch,
     CropOrExtendEnd(f32),
     CropOrExtendStart(f32),
     Stretch(f32)
 }
 
-#[derive(Component)]
-pub enum TimelineManualStep {
+
+#[derive(Default)]
+pub enum TimelineCursor {
+    #[default]
     Rate(f32), // step = duration * rate
     Time(f32), // step = $param / duration
 }
 
 pub struct TimelineSession {
-    pub is_loop : bool,
-    pub is_loop_interpolation : bool,
-    pub is_playing : bool,
-    pub duration : f32,
-    pub progress : f32,
-    pub speed : f32,
-    pub play_mode : TimelinePlayMode,
-    binded_targets: HashMap<&'static str, Vec<(Entity,UntypedHandle)>>
+    is_loop : bool,
+    is_loop_interpolation : bool,
+    is_playing : bool,
+    duration : f32,
+    progress : f32,
+    speed : f32,
+    play_mode : TimelinePlayMode,
+    timeline_db_id: AssetId<TimelineRawData>,
+    binded_targets: HashMap<&'static str, Vec<(Entity,TimelineId)>>
 }
 
 impl TimelineSession {
     
-    pub fn binded_targets(&self, typ:&'static str) -> &[(Entity,UntypedHandle)] {
+    pub fn binded_targets(&self, typ:&'static str) -> &[(Entity,TimelineId)] {
         self.binded_targets.as_slice()
     }
 
@@ -53,15 +58,27 @@ impl TimelineSession {
     }
 }
 
-pub struct TimelineAnimation {
-    id : TimelineId,
-    binded_targets : Vec<Entity>
+pub struct TimelinePlayOption {
+    start: TimelineCursor,
+    is_loop: bool,
+    play_mode: TimelinePlayMode,
+}
+
+impl Default for TimelinePlayOption {
+    fn default() -> Self {
+        Self {
+            start: TimelineCursor::Time(0f32),
+            is_loop: false,
+            play_mode: TimelinePlayMode::ExactMatch
+        }
+    }
 }
 
 #[derive(Component, Default)]
 pub struct TimelinePlayer {
+    unresolved_sessions: Vec<TimelineSession>,
     sessions : HashMap<Cow<'static,str>, TimelineSession>,
-    binded_targets : HashMap<Handle<TimelineRawData>, Option<Entity>>,
+    session_request : HashMap<AssetId<TimelineRawData>, Vec<String>>,
 }
 
 impl TimelinePlayer {
@@ -73,7 +90,7 @@ impl TimelinePlayer {
         &mut self.binded_targets
     }
 
-    pub fn load_all(self, data:Handle<TimelineRawData>) -> Self {
+    pub fn load_all(self, data:AssetId<TimelineRawData>) -> Self {
         self.load(data, None)
     }
 
@@ -99,14 +116,18 @@ impl TimelinePlayer {
         self.sessions.iter_mut()
     }
     
-    pub fn play(&mut self, name:&str) -> Option<bool> {
+    pub fn play(&mut self, name:&str, option:Option<TimelinePlayOption>) -> Option<bool> {
         if let Some(session) = self.sessions.get_mut(name) {
             let is_playing = session.is_playing;
             session.play();
             Some(is_playing)
         } else {
-            None
+
         }
+    }
+
+    pub fn play(&mut self, name:&str, option:TimelinePlayOption) {
+
     }
 
     pub fn stop(&mut self, name:&str) -> Option<bool> {
@@ -131,12 +152,6 @@ impl TimelinePlayer {
     pub fn stop_all(&mut self) {
         self.sessions.values_mut().for_each( |e| {
             e.stop();
-        })
-    }
-
-    pub fn reset_mark(&mut self) {
-        self.sessions.values_mut().for_each( |e| {
-            e.reset_mark();
         })
     }
 }
