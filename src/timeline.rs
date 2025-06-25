@@ -6,7 +6,6 @@ use bevy_asset::{Asset};
 use bevy_transform::prelude::Transform;
 use crate::value::{AnimatableValue};
 
-#[cfg(feature = "json_serialize")]
 use serde_json::Value;
 
 pub struct Keyframe<V:AnimatableValue> {
@@ -22,37 +21,36 @@ impl <V:AnimatableValue> Keyframe<V> {
     pub fn interpolate(&self, s:f32, next:&Keyframe<V>, out:&mut V::Target) {
         self.value.interpolate(s, &next.value, out);
     }
-}
 
-#[cfg(feature="json_serialize")]
-mod group {
-    use serde_json::Value;
-
-    pub struct TimelineTrack {
-        pub typ: String,
-        pub name: String,
-        pub raw_keyframes: Vec<Value>,
-    }
-    pub struct TimelineGroupBulk {
-        duration : f32,
-        track : Vec<TimelineTrack>
+    pub fn load_frames(value:&Value) -> Result<Vec<Keyframe<V>>, Cow<'static,str>> {
+        let values = value.as_array().ok_or( Cow::Borrowed("keyframes is not array") )?;
+        let mut keyframes = Vec::<Keyframe<V>>::new();
+        for keyframe in values {
+            let keyframe = keyframe.as_object().ok_or( Cow::Borrowed("keyframe is not object") )?;
+            let time = keyframe.get("time").ok_or( Cow::Borrowed("time(in keyframe) is not exist") )?.as_f64().ok_or( Cow::Borrowed("time(in keyframe) is not number") )? as f32;
+            let data = V::from_value(None, keyframe.get("data").ok_or( Cow::Borrowed("data(in keyframe) is not exist") )? )?;
+            keyframes.push( Keyframe::new( time,data ) );
+        }
+        Ok(keyframes)
     }
 }
+
 
 #[derive(TypePath,Asset)]
 pub struct Timeline<K> where K:AnimatableValue+Send+Sync+TypePath {
+    duration: f32,
     frames : Vec<Keyframe<K>>
 }
 
 impl <K> Default for Timeline<K> where K:AnimatableValue + Asset {
     fn default() -> Self {
-        Self { frames: vec![] }
+        Self { duration:0f32, frames: vec![] }
     }
 }
 
 impl <K> Timeline<K> where K:AnimatableValue + Asset {
     pub fn new(frames:Vec<Keyframe<K>>) -> Timeline<K> {
-        Self { frames }
+        Self { duration:0f32, frames }
     }
 
     pub fn find_keyframe_pair(&self, time:f32) -> (Option<&Keyframe<K>>,Option<&Keyframe<K>>) {
@@ -103,7 +101,6 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
         }
     }
 
-    #[cfg(feature="json_serialize")]
     fn from_value(value:&Value) -> Result<Self<K>, Cow<'static,str>> {
         const KEY_TIME:Value = Value::String("time".to_string());
         let keyframes = value.as_array().ok_or( Cow::Borrowed("value is not array('keyframes')") )?;

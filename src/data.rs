@@ -11,13 +11,10 @@ pub struct TimelineRawData {
     pub anims: Vec<TimelineAnimation>
 }
 
-impl TimelineRawData {
-
-}
-
 #[derive(Deserialize)]
 pub struct TimelineAnimationTarget {
     pub name: String,
+    pub typ: String,
     pub keyframes: Vec<serde_json::Value>,
 }
 

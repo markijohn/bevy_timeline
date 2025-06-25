@@ -38,27 +38,74 @@ use serde::Deserialize;
 use serde_json::Value;
 use crate::data::TimelineRawData;
 use crate::loader::TimelineRawDataLoader;
+use crate::timeline::Keyframe;
 
+#[derive(Component)]
+pub struct TimelinePlayerLoader {
+    //user create
+    req_list: HashMap<AssetId<TimelineRawData>, Vec<Cow<'static,str>>>,
+
+    //separate as type
+    type_list: HashMap<String, (AssetId<TimelineRawData>,usize,usize)>
+
+    //resolved
+}
+
+impl TimelinePlayerLoader {
+    pub fn new() -> Self {
+        Default::default()
+    }
+    pub fn load_all(self, data:AssetId<TimelineRawData>) -> Self {
+        self.load(data, vec![])
+    }
+
+    pub fn load(mut self, data:AssetId<TimelineRawData>, required_anims:Vec<Cow<'static,str>>) -> Self {
+        if let Some(exist) = self.req_list.get_mut( &data ) {
+            exist.extend( required_anims );
+        } else {
+            self.req_list.insert(data, required_anims);
+        }
+
+        self
+    }
+
+    fn create_map(self) -> HashMap<Cow<'static,str>, TimelineSession> {
+
+    }
+}
 
 #[derive(Hash, Clone, PartialEq, Eq)]
 pub struct TimelineId {
     pub data_handle: AssetId<TimelineRawData>,
+    pub typ: &'static str,
     pub anim_idx: usize,
     pub target_idx: usize,
 }
 
 impl TimelineId {
-    pub fn from_data(data:&TimelineRawData, handle:AssetId<TimelineRawData>, anim_name:&str, target_name:&str) -> Option<Self> {
-        let (anim_idx, anim) = data.anims.iter().enumerate().find( |idx, anim| anim.name == anim_name )?;
+    pub fn from_data<A:AsRef<str>,B:AsRef<str>>(data:&TimelineRawData, handle:AssetId<TimelineRawData>, anim_name:A, typ:&'static str, target_name:&str) -> Option<Self> {
+        let (anim_idx, anim) = data.anims.iter().enumerate().find( |idx, anim| anim.name == anim_name.as_ref() )?;
         let (target_idx, _target) = anim.targets.iter().enumerate().find( |(idx, target)| target.name == target_name )?;
         Some( Self {
             data_handle: handle,
+            typ,
             anim_idx,
             target_idx
         } )
     }
 }
 
+
+enum CacheState {
+    First( AssetId<TimelineRawData> ),
+    Request {id: AssetId<TimelineRawData>, anim_name:String  }
+
+}
+
+#[derive(Default, Resource)]
+struct TimelineUnresolved {
+    req_list: HashMap<String, AssetId<TimelineRawData>, Vec<String>>
+}
 
 #[derive(Default, Resource)]
 pub struct TimelineUntypedCache<K> {
@@ -69,8 +116,10 @@ pub struct TimelineUntypedCache<K> {
 // Timeline animation set
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum AnimationSystemSet {
-    Prepare,
-    Update,
+    PreparePlayer,
+    ResolveType,
+    EventSender,
+    TypedEventReceiver,
     Finalize,
 }
 
@@ -91,22 +140,44 @@ impl Plugin for TimelinePlugin {
         app.configure_sets(
             PostUpdate,
             (
-                AnimationSystemSet::Prepare,
-                AnimationSystemSet::Update,
+                AnimationSystemSet::PreparePlayer,
+                AnimationSystemSet::ResolveType,
+                AnimationSystemSet::EventSender,
+                AnimationSystemSet::TypedEventReceiver,
                 AnimationSystemSet::Finalize,
             ).chain()
         );
+        app
+            .add_plugins( (
+                TimelineImplPlugin::<Scale>::default(),
+                TimelineImplPlugin::<Rotation>::default(),
+                TimelineImplPlugin::<Translation>::default(),
+            ) );
         app.add_event::<TimelineStepEvent<Scale>>()
             .add_event::<TimelineStepEvent<Rotation>>()
             .add_event::<TimelineStepEvent<Translation>>();
         app
-            .add_systems(PostUpdate, bind_targets.in_set(AnimationSystemSet::Prepare))
+            .add_systems(PostUpdate, bind_targets.in_set(AnimationSystemSet::PreparePlayer))
             .add_systems(PostUpdate, consume_step::<Scale>.in_set(AnimationSystemSet::Update) )
             .add_systems(PostUpdate, consume_step::<Rotation>.in_set(AnimationSystemSet::Update) )
             .add_systems(PostUpdate, consume_step::<Translation>.in_set(AnimationSystemSet::Update) )
             .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
         ;
     }
+}
+
+fn player_loader(
+    timeline_data_assets: Res<Assets<TimelineRawData>>,
+    mut player_loader_query: Query<Entity, &TimelinePlayerLoader>
+) {
+    for (entity,player_loader) in player_loader_query {
+        for (id, anim_list) in player_loader.req_list {
+            if let Some(timeline_data) = timeline_data_assets.get( id ) {
+
+            }
+        }
+    }
+
 }
 
 fn bind_targets(
@@ -268,14 +339,56 @@ fn consume_step<K:AnimatableValue>(
     // }
 }
 
-pub struct CustomTimelinePlugin<K> where K:AnimatableValue + 'static {
+#[derive(Default)]
+pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
     inner : PhantomData<K>,
 }
 
-impl <K> Plugin for CustomTimelinePlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
+impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
+
     fn build(&self, app: &mut App) {
         app
-            .add_systems(PostUpdate, consume_step::<K>.in_set(AnimationSystemSet::Update) );
+            .add_event::<TimelineStepEvent<K>>()
+            .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
+            .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
         ;
     }
+}
+
+
+fn resolve_type<K>(
+    timeline_data_assets: Res<Assets<TimelineRawData>>,
+    timeline_typed_assets: ResMut<Assets<Timeline<K>>>,
+    player_loaders_query: Query<&TimelinePlayerLoader>
+) where K:AnimatableValue+Send+Sync+TypePath {
+    for player in player_loaders_query {
+        if let Some( (id, anim_idx, target_idx) ) = player.type_list.get( K::typ() ) {
+            let timeline_data = timeline_data_assets.get( id ).unwrap(); //unreachable
+            let timeline_target = timeline_data.anims[anim_idx].targets[target_idx];
+
+            match Keyframe::<K>::load_frames( timeline_target ) {
+                Ok(frames) => {
+
+                },
+                Err(e) => {
+                    //todo : handle error
+                    panic!( "timeline type({}) resolve failed : {}", K::typ(), e)
+                }
+            }
+
+            let id = TimelineId {
+                data_handle: id.clone(),
+                typ: K::typ(),
+                anim_idx: anim_idx,
+                target_idx: target_idx,
+            };
+        }
+    }
+}
+
+fn consume_step_event<K>(
+    timeline_data_assets: Res<Assets<TimelineRawData>>,
+    player_loaders_query: Query<&TimelinePlayerLoader>
+) where K:AnimatableValue+Send+Sync+TypePath {
+
 }

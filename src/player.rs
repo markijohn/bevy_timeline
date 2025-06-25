@@ -82,7 +82,7 @@ pub struct TimelinePlayer {
 }
 
 impl TimelinePlayer {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Default::default()
     }
 
@@ -90,19 +90,6 @@ impl TimelinePlayer {
         &mut self.binded_targets
     }
 
-    pub fn load_all(self, data:AssetId<TimelineRawData>) -> Self {
-        self.load(data, None)
-    }
-
-    pub fn load(self, data:Handle<TimelineRawData>, import_anims:Option<&[&str]>) -> Self {
-        for (name, anim) in data.anims.iter() {
-            if import_anims.is_none() ||
-                import_anims.unwrap().iter().find( |s| **s == name.as_str() ).is_some() {
-
-            }
-        }
-        self
-    }
 
     pub fn create_session(&mut self, label:&'static str, handle:Handle<TimelineRawData>) {
 
