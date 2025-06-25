@@ -8,11 +8,16 @@
 //! [`Transition`]: Changes the transition of a Transform.
 //! [`Scale`]: Changes the scale of the Transform.
 //! [`Rotation`]: Changes the rotation of the Transform.
-//!
-//! ## Implementation Notes
 //! 
+//! ## Implementation Notes
 //! - The entity to be animated must have a [`TLAnimatable`] entity embedded in it.
 //! - See `examples/custom_animatable` for custom animations
+//! 
+//! ## Inner process
+//! - After identifying the entity with the [`TimelinePlayerLoader`], it reads in the data from 
+//! [`TimelineRawData`] and creates a hashtable so that TimeilneImplPlugins can quickly parse their type of data.
+//! - The [`TimelineImplPlugin`] reads data that it can interpret from the type table in 
+//! the [`TimelinePlayerLoader`] and stores the data in the [`TimelineResolvedCache`].
 
 mod player;
 mod timeline;
@@ -42,18 +47,28 @@ use crate::timeline::Keyframe;
 
 #[derive(Component)]
 pub struct TimelinePlayerLoader {
-    //user create
+    //if this value is `true` then keep [`TimelinePlayer`] in current entity and overwrite session. default is `false`
+    overwrite: bool,
+    
+    //user create from `load`, `load_all`
+    //timeline_db_id : import animation list
     req_list: HashMap<AssetId<TimelineRawData>, Vec<Cow<'static,str>>>,
 
-    //separate as type
-    type_list: HashMap<String, (AssetId<TimelineRawData>,usize,usize)>
+    //inner cache. separate as type
+    //typ : (timeline_db_id, anim_idx, target_idx)
+    type_list: HashMap<String, (AssetId<TimelineRawData>,usize,usize)>,
 
     //resolved
+    resolved_list: HashMap<String, (String, TimelineId)>;
 }
 
 impl TimelinePlayerLoader {
     pub fn new() -> Self {
-        Default::default()
+        Self {
+            overwrite: false,
+            req_list: HashMap::new(),
+            type_list: HashMap::new(),
+        }
     }
     pub fn load_all(self, data:AssetId<TimelineRawData>) -> Self {
         self.load(data, vec![])
@@ -69,9 +84,6 @@ impl TimelinePlayerLoader {
         self
     }
 
-    fn create_map(self) -> HashMap<Cow<'static,str>, TimelineSession> {
-
-    }
 }
 
 #[derive(Hash, Clone, PartialEq, Eq)]
@@ -84,7 +96,7 @@ pub struct TimelineId {
 
 impl TimelineId {
     pub fn from_data<A:AsRef<str>,B:AsRef<str>>(data:&TimelineRawData, handle:AssetId<TimelineRawData>, anim_name:A, typ:&'static str, target_name:&str) -> Option<Self> {
-        let (anim_idx, anim) = data.anims.iter().enumerate().find( |idx, anim| anim.name == anim_name.as_ref() )?;
+        let (anim_idx, anim) = data.anims.iter().enumerate().find( |(idx, anim)| anim.name == anim_name.as_ref() )?;
         let (target_idx, _target) = anim.targets.iter().enumerate().find( |(idx, target)| target.name == target_name )?;
         Some( Self {
             data_handle: handle,
@@ -95,21 +107,9 @@ impl TimelineId {
     }
 }
 
-
-enum CacheState {
-    First( AssetId<TimelineRawData> ),
-    Request {id: AssetId<TimelineRawData>, anim_name:String  }
-
-}
-
 #[derive(Default, Resource)]
-struct TimelineUnresolved {
-    req_list: HashMap<String, AssetId<TimelineRawData>, Vec<String>>
-}
-
-#[derive(Default, Resource)]
-pub struct TimelineUntypedCache<K> {
-    cache: HashMap< TimelineId, Vec<AssetId<Timeline<K>>> >
+struct TimelineResolvedCache<K> where K:AnimatableValue+Send+Sync{
+    cache: HashMap< TimelineId, Timeline<K>>
 }
 
 
@@ -168,12 +168,12 @@ impl Plugin for TimelinePlugin {
 
 fn player_loader(
     timeline_data_assets: Res<Assets<TimelineRawData>>,
-    mut player_loader_query: Query<Entity, &TimelinePlayerLoader>
+    mut player_loader_query: Query<(Entity, &TimelinePlayerLoader)>
 ) {
     for (entity,player_loader) in player_loader_query {
-        for (id, anim_list) in player_loader.req_list {
-            if let Some(timeline_data) = timeline_data_assets.get( id ) {
-
+        for (id, anim_list) in player_loader.req_list.iter() {
+            if let Some(timeline_data) = timeline_data_assets.get( *id ) {
+                timeline_data
             }
         }
     }
@@ -339,15 +339,21 @@ fn consume_step<K:AnimatableValue>(
     // }
 }
 
-#[derive(Default)]
 pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
     inner : PhantomData<K>,
+}
+
+impl <K> Default for TimelineImplPlugin<K> where K:AnimatableValue + 'static {
+    fn default() -> Self {
+        Self { inner : PhantomData }
+    }
 }
 
 impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
 
     fn build(&self, app: &mut App) {
         app
+            .insert_resouce(TimelineResolvedCache::<K>::default())
             .add_event::<TimelineStepEvent<K>>()
             .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
             .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
@@ -363,25 +369,26 @@ fn resolve_type<K>(
 ) where K:AnimatableValue+Send+Sync+TypePath {
     for player in player_loaders_query {
         if let Some( (id, anim_idx, target_idx) ) = player.type_list.get( K::typ() ) {
-            let timeline_data = timeline_data_assets.get( id ).unwrap(); //unreachable
-            let timeline_target = timeline_data.anims[anim_idx].targets[target_idx];
+            let timeline_data = timeline_data_assets.get( *id ).unwrap(); //unreachable
+            let timeline_target = &timeline_data.anims[*anim_idx].targets[*target_idx];
 
-            match Keyframe::<K>::load_frames( timeline_target ) {
-                Ok(frames) => {
 
+            let timeline = match timeline_target.to_timeline::<K>() {
+                Ok(timeline) => {
+                    timeline
                 },
                 Err(e) => {
                     //todo : handle error
                     panic!( "timeline type({}) resolve failed : {}", K::typ(), e)
                 }
-            }
-
+            };
             let id = TimelineId {
                 data_handle: id.clone(),
                 typ: K::typ(),
                 anim_idx: anim_idx,
                 target_idx: target_idx,
             };
+
         }
     }
 }

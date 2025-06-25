@@ -21,15 +21,18 @@ impl <V:AnimatableValue> Keyframe<V> {
     pub fn interpolate(&self, s:f32, next:&Keyframe<V>, out:&mut V::Target) {
         self.value.interpolate(s, &next.value, out);
     }
+    
+    pub fn load_frame(value:&Value) -> Result<Keyframe<V>, Cow<'static,str>> {
+        let keyframe = value.as_object().ok_or( Cow::Borrowed("keyframe is not object") )?;
+        let time = keyframe.get("time").ok_or( Cow::Borrowed("time(in keyframe) is not exist") )?.as_f64().ok_or( Cow::Borrowed("time(in keyframe) is not number") )? as f32;
+        let data = V::from_value(None, keyframe.get("data").ok_or( Cow::Borrowed("data(in keyframe) is not exist") )? )?;
+        Ok( Keyframe::new( time,data ) )
+    }
 
-    pub fn load_frames(value:&Value) -> Result<Vec<Keyframe<V>>, Cow<'static,str>> {
-        let values = value.as_array().ok_or( Cow::Borrowed("keyframes is not array") )?;
+    pub fn load_frames(values:&Vec<Value>) -> Result<Vec<Keyframe<V>>, Cow<'static,str>> {
         let mut keyframes = Vec::<Keyframe<V>>::new();
         for keyframe in values {
-            let keyframe = keyframe.as_object().ok_or( Cow::Borrowed("keyframe is not object") )?;
-            let time = keyframe.get("time").ok_or( Cow::Borrowed("time(in keyframe) is not exist") )?.as_f64().ok_or( Cow::Borrowed("time(in keyframe) is not number") )? as f32;
-            let data = V::from_value(None, keyframe.get("data").ok_or( Cow::Borrowed("data(in keyframe) is not exist") )? )?;
-            keyframes.push( Keyframe::new( time,data ) );
+            keyframes.push( Keyframe::load_frame(keyframe)? );
         }
         Ok(keyframes)
     }
@@ -38,23 +41,18 @@ impl <V:AnimatableValue> Keyframe<V> {
 
 #[derive(TypePath,Asset)]
 pub struct Timeline<K> where K:AnimatableValue+Send+Sync+TypePath {
+    name: String,
     duration: f32,
-    frames : Vec<Keyframe<K>>
+    keyframes : Vec<Keyframe<K>>
 }
 
-impl <K> Default for Timeline<K> where K:AnimatableValue + Asset {
-    fn default() -> Self {
-        Self { duration:0f32, frames: vec![] }
-    }
-}
-
-impl <K> Timeline<K> where K:AnimatableValue + Asset {
-    pub fn new(frames:Vec<Keyframe<K>>) -> Timeline<K> {
-        Self { duration:0f32, frames }
+impl <K> Timeline<K> where K:AnimatableValue+Send+Sync {
+    pub fn new(name:String, duration:f32, keyframes:Vec<Keyframe<K>>) -> Timeline<K> {
+        Self { name, duration, keyframes }
     }
 
     pub fn find_keyframe_pair(&self, time:f32) -> (Option<&Keyframe<K>>,Option<&Keyframe<K>>) {
-        if self.frames.is_empty() {
+        if self.keyframes.is_empty() {
             return (None, None);
         }
 
@@ -66,7 +64,7 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
         //     return (Some( &self.frames[self.frames.len() - 1] ), None);
         // }
 
-        let (before,next) = match self.frames.binary_search_by(|probe| probe.time.partial_cmp(&time).unwrap()) {
+        let (before,next) = match self.keyframes.binary_search_by(|probe| probe.time.partial_cmp(&time).unwrap()) {
             Ok(i) => {
                 let before = if i > 0 { Some(i - 1) } else { None };
                 let next = Some(i);
@@ -74,11 +72,11 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
             }
             Err(i) => {
                 let before = if i > 0 { Some(i - 1) } else { None };
-                let next = if i < self.frames.len() { Some(i) } else { None };
+                let next = if i < self.keyframes.len() { Some(i) } else { None };
                 (before, next)
             }
         };
-        (before.map(|idx| &self.frames[idx]), next.map(|idx| &self.frames[idx]))
+        (before.map(|idx| &self.keyframes[idx]), next.map(|idx| &self.keyframes[idx]))
     }
 
     pub fn interpolate(&self, anim_time:f32, out:&mut K::Target) {
@@ -101,20 +99,15 @@ impl <K> Timeline<K> where K:AnimatableValue + Asset {
         }
     }
 
-    fn from_value(value:&Value) -> Result<Self<K>, Cow<'static,str>> {
-        const KEY_TIME:Value = Value::String("time".to_string());
-        let keyframes = value.as_array().ok_or( Cow::Borrowed("value is not array('keyframes')") )?;
-        let mut frames = Vec::with_capacity(keyframes.len());
-        for key in keyframes {
-            let map = key.as_object().ok_or( Cow::Borrowed("value is not object(`keyframe`)") )?;
-            let time = map.get("time").ok_or( Cow::Borrowed("time not exist in keyframe") )?
-                .as_number().ok_or( Cow::Borrowed("time is not a number") )?
-                .as_f64().unwrap() as f32;
-            let data = K::from_value( map.get("data").ok_or( Cow::Borrowed("data not exist in keyframe") )? )?;
-            frames.push( Keyframe::new(time, data) );
-        }
-        Ok( Self { frames } )
-    }
+    // fn from_value(value:&Value) -> Result<Timeline<K>, Cow<'static,str>> {
+    //     let timeline = value.as_object().ok_or(Cow::Borrowed("timeline is not object"))?;
+    //     let name = timeline.get("name").ok_or(Cow::Borrowed("name(in timeline) is not exist"))?.as_str().ok_or(Cow::Borrowed("name(in timeline) is not string"))?.to_string();
+    //     let duration = timeline.get("duration").ok_or(Cow::Borrowed("duration(in timeline) is not exist)"))?
+    //         .as_number().ok_or(Cow::Borrowed("duration(in timeline) is not number"))?.as_f64().unwrap() as f32;
+    //     let keyframes = timeline.get("keyframes").ok_or(Cow::Borrowed("keyframes(in timeline) is not exist"))?;
+    //     let keyframes = Keyframe::<K>::load_frames(keyframes)?;
+    //     Ok(Self { name, duration, keyframes })
+    // }
 }
 
 #[cfg(test)]

@@ -15,11 +15,15 @@ pub enum TimelinePlayMode {
 }
 
 
-#[derive(Default)]
 pub enum TimelineCursor {
-    #[default]
     Rate(f32), // step = duration * rate
     Time(f32), // step = $param / duration
+}
+
+impl Default for TimelineCursor {
+    fn default() -> Self {
+        Self::Time(0.0)
+    }
 }
 
 pub struct TimelineSession {
