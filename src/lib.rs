@@ -93,7 +93,7 @@ pub struct TimelineAnimId {
 
 #[derive(Hash, Clone, PartialEq, Eq)]
 pub struct TimelineId {
-    pub anim_id: AssetId<TimelineAnimId>,
+    pub anim_id: TimelineAnimId,
     pub target_idx: usize,
 }
 
@@ -102,9 +102,10 @@ impl TimelineId {
         let (anim_idx, anim) = data.anims.iter().enumerate().find( |(idx, anim)| anim.name == anim_name.as_ref() )?;
         let (target_idx, _target) = anim.targets.iter().enumerate().find( |(idx, target)| target.name == target_name )?;
         Some( Self {
-            data_handle: handle,
-            typ,
-            anim_idx,
+            anim_id: TimelineAnimId { 
+                data_id: handle,
+                anim_idx,
+            },
             target_idx
         } )
     }
@@ -130,9 +131,6 @@ pub enum AnimationSystemSet {
 
     /// Each [`TimelineImplPlugin`] receive the `Event` and dispatch
     TypedEventReceiver,
-
-    /// Remove [`TimelinePlayerLoader`]
-    Finalize,
 }
 
 #[derive(Component)]
@@ -152,7 +150,6 @@ impl Plugin for TimelinePlugin {
                 AnimationSystemSet::ResolveType,
                 AnimationSystemSet::EventSender,
                 AnimationSystemSet::TypedEventReceiver,
-                AnimationSystemSet::Finalize,
             ).chain()
         );
         app
@@ -161,9 +158,6 @@ impl Plugin for TimelinePlugin {
                 TimelineImplPlugin::<Rotation>::default(),
                 TimelineImplPlugin::<Translation>::default(),
             ) );
-        app.add_event::<TimelineStepEvent<Scale>>()
-            .add_event::<TimelineStepEvent<Rotation>>()
-            .add_event::<TimelineStepEvent<Translation>>();
         app
             .add_systems(PostUpdate, load_player.in_set(AnimationSystemSet::PreparePlayer))
             .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
@@ -172,6 +166,7 @@ impl Plugin for TimelinePlugin {
 }
 
 fn load_player(
+    mut cmds:Commands,
     timeline_data_assets: Res<Assets<TimelineRawData>>,
     mut player_loaders: Query<(Entity, &mut TimelinePlayerLoader, Option<&Children>), Added<TimelinePlayerLoader> >,
     has_childs:Query<(Entity,&Name,&Children)>,
@@ -179,45 +174,54 @@ fn load_player(
 ) {
     //Collect named entity
 
-    for (root_entity, player_loader, children) in player_loaders.iter_mut() {
+    for (_self_entity, player_loader, children) in player_loaders.iter_mut() {
         let mut entity_map = HashMap::new();
-        let mut dig = children.iter().collect::<Vec<Entity>>();
-        while dig.len() > 0 {
-            let Some(next) = dig.pop() else { break };
-            if let Ok((dig_under, name, children)) = has_childs.get(next) {
-                //bind exist target
-                entity_map.insert( name.as_str(), dig_under.clone() );
-                dig.extend(children.iter().collect::<Vec<Entity>>());
-            } else {
-                if let Ok((entity, name)) = last_level_childs.get(next) {
+        if let Some(children) = children {
+            let mut dig = children.iter().collect::<Vec<Entity>>();
+            while dig.len() > 0 {
+                let Some(next) = dig.pop() else { break };
+                if let Ok((dig_under, name, children)) = has_childs.get(next) {
                     //bind exist target
-                    entity_map.insert( name.as_str(), entity );
+                    entity_map.insert( name.as_str(), dig_under.clone() );
+                    dig.extend(children.iter().collect::<Vec<Entity>>());
+                } else {
+                    if let Ok((entity, name)) = last_level_childs.get(next) {
+                        //bind exist target
+                        entity_map.insert( name.as_str(), entity );
+                    }
                 }
             }
         }
+        
 
         //Insert player
         for (id, req_anim_list) in player_loader.req_list.iter() {
             let mut player = TimelinePlayer::new();
             if let Some(timeline_data) = timeline_data_assets.get( *id ) {
-
                 for (anim_idx,anim) in timeline_data.anims.iter().enumerate() {
-                    if req_anim_list.iter().find( &anim.name ).is_some() {
+                    let mut session_bind_target:Vec<Option<(Entity,TimelineId)>> = Vec::new();
+                    if req_anim_list.iter().find( |v| v.as_ref() == &anim.name ).is_some() {
+                        let timeline_animid = TimelineAnimId { data_id: id.clone(), anim_idx };
                         for (target_idx,target) in anim.targets.iter().enumerate() {
+                            let timeline_id = TimelineId { anim_id: timeline_animid.clone(), target_idx };
                             let target_name = target.name.as_str();
-                            let target_entity = if target_name == "_self" {
-                                root_entity.clone()
+                            let bind = if target_name == "_self" {
+                                Some( (_self_entity.clone(), timeline_id) )
                             } else if let Some(entity) = entity_map.get( target_name ) {
-                                entity.clone()
+                                Some( (entity.clone(), timeline_id) )
                             } else {
                                 // warn!("Can't find target {}({})", target_name, target.typ);
-                                continue;
+                                None
                             };
-
-
+                            session_bind_target.push(bind);
                         }
+                        player.create_session(timeline_animid, session_bind_target);
                     }
                 }
+                
+                cmds.entity(_self_entity)
+                    .insert( player )
+                    .remove::< TimelinePlayerLoader>();
             }
         }
     }

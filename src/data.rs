@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use bevy_asset::AssetId;
 use bevy_asset::prelude::Asset;
+use bevy_asset::uuid::Uuid;
 use bevy_reflect::TypePath;
 use crate::timeline::Keyframe;
 use serde::Deserialize;
