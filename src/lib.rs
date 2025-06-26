@@ -10,7 +10,7 @@
 //! [`Rotation`]: Changes the rotation of the Transform.
 //! 
 //! ## Implementation Notes
-//! - The entity to be animated must have a [`TLAnimatable`] entity embedded in it.
+//! - The entity to be animated must have a [`TimelinePlayerLoader`] entity embedded in it.
 //! - See `examples/custom_animatable` for custom animations
 //! 
 //! ## Inner process
@@ -51,15 +51,13 @@ pub struct TimelinePlayerLoader {
     overwrite: bool,
     
     //user create from `load`, `load_all`
-    //timeline_db_id : import animation list
+    //timeline_db_id : import anima names
     req_list: HashMap<AssetId<TimelineRawData>, Vec<Cow<'static,str>>>,
 
+    //This is just an intermediate step to minimize search duplication.
     //inner cache. separate as type
     //typ : (timeline_db_id, anim_idx, target_idx)
-    type_list: HashMap<String, (AssetId<TimelineRawData>,usize,usize)>,
-
-    //resolved
-    resolved_list: HashMap<String, (String, TimelineId)>;
+    type_list: HashMap<String, Vec< TimelineId > >,
 }
 
 impl TimelinePlayerLoader {
@@ -70,6 +68,7 @@ impl TimelinePlayerLoader {
             type_list: HashMap::new(),
         }
     }
+
     pub fn load_all(self, data:AssetId<TimelineRawData>) -> Self {
         self.load(data, vec![])
     }
@@ -87,10 +86,14 @@ impl TimelinePlayerLoader {
 }
 
 #[derive(Hash, Clone, PartialEq, Eq)]
-pub struct TimelineId {
-    pub data_handle: AssetId<TimelineRawData>,
-    pub typ: &'static str,
+pub struct TimelineAnimId {
+    pub data_id: AssetId<TimelineRawData>,
     pub anim_idx: usize,
+}
+
+#[derive(Hash, Clone, PartialEq, Eq)]
+pub struct TimelineId {
+    pub anim_id: AssetId<TimelineAnimId>,
     pub target_idx: usize,
 }
 
@@ -116,10 +119,19 @@ struct TimelineResolvedCache<K> where K:AnimatableValue+Send+Sync{
 // Timeline animation set
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum AnimationSystemSet {
+    /// Query [`TimelinePlayerLoader`] and load [`TimelineRawData`] from asset
     PreparePlayer,
+
+    /// Each [`TimelineImplPlugin`] interprets the data and stores it in the [`TimelineResolvedCache`]
     ResolveType,
+
+    /// [`TimelinePlayer`] sends `Event` via the saved session (entity, animation information)
     EventSender,
+
+    /// Each [`TimelineImplPlugin`] receive the `Event` and dispatch
     TypedEventReceiver,
+
+    /// Remove [`TimelinePlayerLoader`]
     Finalize,
 }
 
@@ -131,10 +143,6 @@ pub struct TimelinePlugin;
 
 impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
-        app
-            .insert_resource( TimelineUntypedCache::<Scale>::default() )
-            .insert_resource( TimelineUntypedCache::<Rotation>::default() )
-            .insert_resource( TimelineUntypedCache::<Translation>::default() );
         app.init_asset::<TimelineRawData>()
             .register_asset_loader(TimelineRawDataLoader);
         app.configure_sets(
@@ -157,65 +165,102 @@ impl Plugin for TimelinePlugin {
             .add_event::<TimelineStepEvent<Rotation>>()
             .add_event::<TimelineStepEvent<Translation>>();
         app
-            .add_systems(PostUpdate, bind_targets.in_set(AnimationSystemSet::PreparePlayer))
-            .add_systems(PostUpdate, consume_step::<Scale>.in_set(AnimationSystemSet::Update) )
-            .add_systems(PostUpdate, consume_step::<Rotation>.in_set(AnimationSystemSet::Update) )
-            .add_systems(PostUpdate, consume_step::<Translation>.in_set(AnimationSystemSet::Update) )
+            .add_systems(PostUpdate, load_player.in_set(AnimationSystemSet::PreparePlayer))
             .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
         ;
     }
 }
 
-fn player_loader(
+fn load_player(
     timeline_data_assets: Res<Assets<TimelineRawData>>,
-    mut player_loader_query: Query<(Entity, &TimelinePlayerLoader)>
-) {
-    for (entity,player_loader) in player_loader_query {
-        for (id, anim_list) in player_loader.req_list.iter() {
-            if let Some(timeline_data) = timeline_data_assets.get( *id ) {
-                timeline_data
-            }
-        }
-    }
-
-}
-
-fn bind_targets(
-    mut cmds:Commands,
-    time: Res<Time>,
-    assets: Res<Assets<TimelineRawData>>,
-    //mut players_force_rebinder: Query<(&mut TimelinePlayer, &Children), With<TimelineMarkBind> >,
-    mut players: Query<(&mut TimelinePlayer, &Children), Added<TimelinePlayer> >,
+    mut player_loaders: Query<(Entity, &mut TimelinePlayerLoader, Option<&Children>), Added<TimelinePlayerLoader> >,
     has_childs:Query<(Entity,&Name,&Children)>,
     last_level_childs:Query<(Entity,&Name), Without<Children>>,
 ) {
-    //TODO : remove end animate session
-    
-    //Collect required target entity
-    for (mut player, children) in players.iter_mut() {
-        
-        let targets = player.targets_mut();
-        let mut dig = children.iter().collect::<Vec<Entity>>();
+    //Collect named entity
 
+    for (root_entity, player_loader, children) in player_loaders.iter_mut() {
+        let mut entity_map = HashMap::new();
+        let mut dig = children.iter().collect::<Vec<Entity>>();
         while dig.len() > 0 {
             let Some(next) = dig.pop() else { break };
-            if let Ok( (dig_under, name, children) ) = has_childs.get(next) {
+            if let Ok((dig_under, name, children)) = has_childs.get(next) {
                 //bind exist target
-                if targets.contains_key( name.as_str() ) {
-                    targets.insert( Cow::Owned(name.as_str().to_string()), Some(dig_under.clone()) );
-                    dig.extend( children.iter().collect::<Vec<Entity>>() );
-                }
+                entity_map.insert( name.as_str(), dig_under.clone() );
+                dig.extend(children.iter().collect::<Vec<Entity>>());
             } else {
                 if let Ok((entity, name)) = last_level_childs.get(next) {
                     //bind exist target
-                    if targets.contains_key( name.as_str() ) {
-                        targets.insert( Cow::Owned(name.as_str().to_string()), Some(entity.clone()) );
+                    entity_map.insert( name.as_str(), entity );
+                }
+            }
+        }
+
+        //Insert player
+        for (id, req_anim_list) in player_loader.req_list.iter() {
+            let mut player = TimelinePlayer::new();
+            if let Some(timeline_data) = timeline_data_assets.get( *id ) {
+
+                for (anim_idx,anim) in timeline_data.anims.iter().enumerate() {
+                    if req_anim_list.iter().find( &anim.name ).is_some() {
+                        for (target_idx,target) in anim.targets.iter().enumerate() {
+                            let target_name = target.name.as_str();
+                            let target_entity = if target_name == "_self" {
+                                root_entity.clone()
+                            } else if let Some(entity) = entity_map.get( target_name ) {
+                                entity.clone()
+                            } else {
+                                // warn!("Can't find target {}({})", target_name, target.typ);
+                                continue;
+                            };
+
+
+                        }
                     }
                 }
             }
         }
     }
+
+
+
 }
+
+// fn bind_targets(
+//     mut cmds:Commands,
+//     assets: Res<Assets<TimelineRawData>>,
+//     //mut players_force_rebinder: Query<(&mut TimelinePlayer, &Children), With<TimelineMarkBind> >,
+//     mut players: Query<(&mut TimelinePlayer, &Children), Added<TimelinePlayer> >,
+//     has_childs:Query<(Entity,&Name,&Children)>,
+//     last_level_childs:Query<(Entity,&Name), Without<Children>>,
+// ) {
+//     //TODO : remove end animate session
+//
+//     //Collect named entity
+//     for (mut player, children) in players.iter_mut() {
+//
+//         let targets = player.targets_mut();
+//         let mut dig = children.iter().collect::<Vec<Entity>>();
+//
+//         while dig.len() > 0 {
+//             let Some(next) = dig.pop() else { break };
+//             if let Ok( (dig_under, name, children) ) = has_childs.get(next) {
+//                 //bind exist target
+//                 if targets.contains_key( name.as_str() ) {
+//                     targets.insert( Cow::Owned(name.as_str().to_string()), Some(dig_under.clone()) );
+//                     dig.extend( children.iter().collect::<Vec<Entity>>() );
+//                 }
+//             } else {
+//                 if let Ok((entity, name)) = last_level_childs.get(next) {
+//                     //bind exist target
+//                     if targets.contains_key( name.as_str() ) {
+//                         targets.insert( Cow::Owned(name.as_str().to_string()), Some(entity.clone()) );
+//                     }
+//                 }
+//             }
+//         }
+//     }
+// }
 
 fn propagete_step_event<K>(
     players: Query<&mut TimelinePlayer>,
@@ -236,7 +281,7 @@ fn resolve_keyframes<K>(
 
 fn animate_step<K>(
     mut cmds: Commands,
-    anim_cache: Res<TimelineUntypedCache>,
+    anim_cache: Res<TimelineResolvedCache<K>>,
     keyframes: Res<Assets<Timeline<K>>>,
     players: Query<(&TimelinePlayer)>,
     target_query: Query<&mut K::Target, With<Name>>
@@ -302,42 +347,6 @@ fn finalize(
     }
 }
 
-// From here, the animation is interpolated and output to the actual animation target.
-// Once the animation has ended, we remove the animation flag from the bound entity.
-fn consume_step<K:AnimatableValue>(
-    mut commands: Commands,
-    assets: Res<Assets<Timeline<K>>>,
-    active_anim_entities: Query<(Entity, &mut K::Target, &TimelineStep, &TimelineHandleCache<K>)>,
-) where K:AnimatableValue+Send+Sync+TypePath {
-    for (entity, out, step, cache) in active_anim_entities.iter() {
-        for (anim_key, time) in step.iter() {
-            let timeline = assets.get( cache.get(anim_key).unwrap() ).unwrap();
-            timeline.interpolate( time, out );
-            commands.remove::<TimelineStep>( entity );
-        }
-    }
-    //Find plyaing session and enable timeline
-    // for (entity, target) in inactives.iter() {
-    //     for (_player_entity, player) in players.iter() {
-    //         for (anim_name, session) in player.playing_sessions() {
-    //             if let Some(find_my_entity) = session.binded_targets().iter().find( |e| **e == entity ) {
-    //                 commands.entity(*find_my_entity).insert( TLActive );
-    //             }
-    //         }
-    //     }
-    // }
-    // for (entity,player) in players.iter() {
-    //     let anim_handle = player.play_list();
-    //     if let Some(anim) = assets.get(anim_handle) {
-    //         for (target, entity) in player.binded_targets() {
-    //             let target = anim.get_target( target );
-    //             if let Some(transform) = world.get_mut::<Transform>(*entity) {
-    //                 //entity_mut.get::<Transform>();
-    //             }
-    //         }
-    //     }
-    // }
-}
 
 pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
     inner : PhantomData<K>,
@@ -364,11 +373,15 @@ impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync 
 
 fn resolve_type<K>(
     timeline_data_assets: Res<Assets<TimelineRawData>>,
-    timeline_typed_assets: ResMut<Assets<Timeline<K>>>,
+    timeline_resolved: ResMut<TimelineResolvedCache<K>>,
     player_loaders_query: Query<&TimelinePlayerLoader>
 ) where K:AnimatableValue+Send+Sync+TypePath {
     for player in player_loaders_query {
-        if let Some( (id, anim_idx, target_idx) ) = player.type_list.get( K::typ() ) {
+        if let Some( tid ) = player.type_list.get( K::typ() ) {
+            let is_exist = timeline_resolved.cache.get( &tid ).is_some();
+            if !is_exist {
+
+            }
             let timeline_data = timeline_data_assets.get( *id ).unwrap(); //unreachable
             let timeline_target = &timeline_data.anims[*anim_idx].targets[*target_idx];
 
@@ -393,9 +406,13 @@ fn resolve_type<K>(
     }
 }
 
+// From here, the animation is interpolated and output to the actual animation target.
+// Once the animation has ended, we remove the animation flag from the bound entity.
+
 fn consume_step_event<K>(
     timeline_data_assets: Res<Assets<TimelineRawData>>,
-    player_loaders_query: Query<&TimelinePlayerLoader>
+    player_loaders_query: Query<&TimelinePlayer>,
+
 ) where K:AnimatableValue+Send+Sync+TypePath {
 
 }

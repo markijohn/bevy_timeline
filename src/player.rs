@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use bevy_asset::prelude::*;
 use bevy_ecs::prelude::*;
 use crate::timeline::Timeline;
-use crate::{TimelineId, TimelineRawData};
+use crate::{TimelineAnimId, TimelineId, TimelineRawData};
 
 #[derive(Default)]
 pub enum TimelinePlayMode {
@@ -81,8 +81,7 @@ impl Default for TimelinePlayOption {
 #[derive(Component, Default)]
 pub struct TimelinePlayer {
     unresolved_sessions: Vec<TimelineSession>,
-    sessions : HashMap<Cow<'static,str>, TimelineSession>,
-    session_request : HashMap<AssetId<TimelineRawData>, Vec<String>>,
+    sessions : HashMap<TimelineAnimId, TimelineSession>,
 }
 
 impl TimelinePlayer {
