@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use bevy_asset::prelude::*;
 use bevy_ecs::prelude::*;
+use fxhash::FxHashMap;
 use crate::timeline::Timeline;
 use crate::{TimelineAnimId, TimelineId, TimelineRawData};
 
@@ -43,7 +44,8 @@ pub struct TimelineSession {
     speed : f32,
     play_mode : TimelinePlayMode,
     timeline_anim_id: TimelineAnimId,
-    binded_targets: Vec<Option<(Entity,TimelineId)>>
+    binded_targets: Vec<Option<(Entity,TimelineId)>>,
+    binded_targets_idxs: HashMap<&'static str, Vec<usize>>,
 }
 
 impl TimelineSession {
@@ -161,11 +163,7 @@ impl TimelinePlayer {
         }
     }
 
-    pub fn play_id(&mut self, name:Timeline, option:TimelinePlayOption) {
-
-    }
-
-    /// Stops the animation with the given name and returns its state before playing. 
+    /// Stops the animation with the given name and returns its state before playing.
     /// Returns `None` if the target animation does not exist
     pub fn stop(&mut self, name:&str) -> Option<bool> {
         if let Some(session) = self.sessions.get_mut(name) {
@@ -203,5 +201,9 @@ impl TimelinePlayer {
     /// Replay any internal non-zero accumulated playback time.
     pub fn resume_all(&mut self) {
         
+    }
+
+    pub fn get_entity_keyframe(entity:Entity) -> Option<usize> {
+
     }
 }

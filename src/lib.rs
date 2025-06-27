@@ -160,7 +160,7 @@ impl Plugin for TimelinePlugin {
             ) );
         app
             .add_systems(PostUpdate, load_player.in_set(AnimationSystemSet::PreparePlayer))
-            .add_systems(PostUpdate, finalize.in_set(AnimationSystemSet::Finalize))
+
         ;
     }
 }
@@ -168,13 +168,13 @@ impl Plugin for TimelinePlugin {
 fn load_player(
     mut cmds:Commands,
     timeline_data_assets: Res<Assets<TimelineRawData>>,
-    mut player_loaders: Query<(Entity, &mut TimelinePlayerLoader, Option<&Children>), Added<TimelinePlayerLoader> >,
+    mut player_loaders: Query<(Entity, &mut TimelinePlayerLoader, Option<&TimelinePlayer>, Option<&Children>), Added<TimelinePlayerLoader> >,
     has_childs:Query<(Entity,&Name,&Children)>,
     last_level_childs:Query<(Entity,&Name), Without<Children>>,
 ) {
     //Collect named entity
 
-    for (_self_entity, player_loader, children) in player_loaders.iter_mut() {
+    for (_self_entity, player_loader, exist_player, children) in player_loaders.iter_mut() {
         let mut entity_map = HashMap::new();
         if let Some(children) = children {
             let mut dig = children.iter().collect::<Vec<Entity>>();
@@ -197,6 +197,11 @@ fn load_player(
         //Insert player
         for (id, req_anim_list) in player_loader.req_list.iter() {
             let mut player = TimelinePlayer::new();
+            let (overwrite,player_mut) = if player_loader.overwrite {
+                (true, exist_player.unwrap_or( &mut player ))
+            } else {
+                (false, &mut player)
+            };
             if let Some(timeline_data) = timeline_data_assets.get( *id ) {
                 for (anim_idx,anim) in timeline_data.anims.iter().enumerate() {
                     let mut session_bind_target:Vec<Option<(Entity,TimelineId)>> = Vec::new();
@@ -215,13 +220,16 @@ fn load_player(
                             };
                             session_bind_target.push(bind);
                         }
-                        player.create_session(timeline_animid, session_bind_target);
+                        player_mut.create_session(timeline_animid, session_bind_target);
                     }
                 }
-                
-                cmds.entity(_self_entity)
-                    .insert( player )
-                    .remove::< TimelinePlayerLoader>();
+
+                if !overwrite {
+                    cmds.entity(_self_entity)
+                        .insert( player )
+                        .remove::< TimelinePlayerLoader>();
+                }
+
             }
         }
     }
@@ -230,43 +238,8 @@ fn load_player(
 
 }
 
-// fn bind_targets(
-//     mut cmds:Commands,
-//     assets: Res<Assets<TimelineRawData>>,
-//     //mut players_force_rebinder: Query<(&mut TimelinePlayer, &Children), With<TimelineMarkBind> >,
-//     mut players: Query<(&mut TimelinePlayer, &Children), Added<TimelinePlayer> >,
-//     has_childs:Query<(Entity,&Name,&Children)>,
-//     last_level_childs:Query<(Entity,&Name), Without<Children>>,
-// ) {
-//     //TODO : remove end animate session
-//
-//     //Collect named entity
-//     for (mut player, children) in players.iter_mut() {
-//
-//         let targets = player.targets_mut();
-//         let mut dig = children.iter().collect::<Vec<Entity>>();
-//
-//         while dig.len() > 0 {
-//             let Some(next) = dig.pop() else { break };
-//             if let Ok( (dig_under, name, children) ) = has_childs.get(next) {
-//                 //bind exist target
-//                 if targets.contains_key( name.as_str() ) {
-//                     targets.insert( Cow::Owned(name.as_str().to_string()), Some(dig_under.clone()) );
-//                     dig.extend( children.iter().collect::<Vec<Entity>>() );
-//                 }
-//             } else {
-//                 if let Ok((entity, name)) = last_level_childs.get(next) {
-//                     //bind exist target
-//                     if targets.contains_key( name.as_str() ) {
-//                         targets.insert( Cow::Owned(name.as_str().to_string()), Some(entity.clone()) );
-//                     }
-//                 }
-//             }
-//         }
-//     }
-// }
 
-fn propagete_step_event<K>(
+fn send_anim_event<K>(
     players: Query<&mut TimelinePlayer>,
     step_writer: EventWriter<TimelineStepEvent<K>>,
 ) where K:AnimatableValue+Send+Sync+TypePath {
@@ -369,10 +342,13 @@ impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync 
             .insert_resouce(TimelineResolvedCache::<K>::default())
             .add_event::<TimelineStepEvent<K>>()
             .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
+            .add_systems(PostUpdate, send_anim_event::<K>.in_set(AnimationSystemSet::EventSender))
             .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
         ;
     }
 }
+
+
 
 
 fn resolve_type<K>(
