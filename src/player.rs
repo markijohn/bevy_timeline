@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use bevy_asset::prelude::*;
 use bevy_ecs::prelude::*;
-use fxhash::FxHashMap;
 use crate::timeline::Timeline;
 use crate::{TimelineAnimId, TimelineId, TimelineRawData};
 
