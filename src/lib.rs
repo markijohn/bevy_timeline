@@ -328,15 +328,6 @@ fn prepare_animation<K:AnimatableValue>(
     }
 }
 
-fn finalize(
-    mut commands: Commands,
-    players: Query<&mut TimelinePlayer>,
-) {
-    for mut player in players {
-        player.reset_mark();
-    }
-}
-
 
 pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
     inner : PhantomData<K>,
