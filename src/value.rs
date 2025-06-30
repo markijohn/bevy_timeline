@@ -12,13 +12,9 @@ pub trait AnimatableValue:TypePath+Sized {
     type Target: Component<Mutability=Mutable>;
     fn interpolate(&self, s:f32, next:&Self, out:&mut Self::Target);
 
-    fn from_value(version:Option<f32>, value:&Value) -> Result<Self, Cow<'static,str>>;
+    fn from_value(value:&Value) -> Result<Self, Cow<'static,str>>;
 
     fn to_value(&self) -> Value;
-
-    fn version() -> Option<f32> {
-        None
-    }
 
     fn typ() -> &'static str {
         Self::type_path()

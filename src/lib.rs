@@ -137,7 +137,17 @@ pub enum AnimationSystemSet {
 pub struct TimelineTargetRebind;
 
 
-pub struct TimelinePlugin;
+
+pub struct TimelinePlugin {
+    resolver: HashMap<&'static str,TimelineUntypedResolver>,
+}
+
+impl TimelinePlugin {
+    pub fn register_type<T:AnimatableValue>(mut self) -> Self {
+        self.resolver.insert( T::typ(), )
+        self
+    }
+}
 
 impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
@@ -164,6 +174,8 @@ impl Plugin for TimelinePlugin {
         ;
     }
 }
+
+
 
 fn load_player(
     mut cmds:Commands,
@@ -253,6 +265,7 @@ fn resolve_keyframes<K>(
     target_query: Query<&mut K::Target, With<Name>>,
 ) where K:AnimatableValue+Send+Sync+TypePath {
     //find exist resolved animation
+
 }
 
 
