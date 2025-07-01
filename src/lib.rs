@@ -37,11 +37,12 @@ use bevy_ecs::prelude::*;
 use bevy_time::Time;
 use bevy_transform::prelude::*;
 use bevy_asset::prelude::*;
+use bevy_ecs::component::{ComponentMutability, Mutable};
 use bevy_ecs::query::QueryData;
 use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::data::{TimelineUntypedAnimation, TimelineUntypedResolver};
+use crate::data::{TimelineUntypedAnimation, TimelineUntypedResolver, TimelineUntypedTarget};
 use crate::timeline::Keyframe;
 
 // Timeline animation set
@@ -249,30 +250,30 @@ fn prepare_animation<K:AnimatableValue>(
 
     }
 }
-
-
-pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
-    inner : PhantomData<K>,
-}
-
-impl <K> Default for TimelineImplPlugin<K> where K:AnimatableValue + 'static {
-    fn default() -> Self {
-        Self { inner : PhantomData }
-    }
-}
-
-impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
-
-    fn build(&self, app: &mut App) {
-        app
-            .insert_resouce(TimelineResolvedCache::<K>::default())
-            .add_event::<TimelineStepEvent<K>>()
-            .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
-            .add_systems(PostUpdate, send_anim_event::<K>.in_set(AnimationSystemSet::EventSender))
-            .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
-        ;
-    }
-}
+// 
+// 
+// pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
+//     inner : PhantomData<K>,
+// }
+// 
+// impl <K> Default for TimelineImplPlugin<K> where K:AnimatableValue + 'static {
+//     fn default() -> Self {
+//         Self { inner : PhantomData }
+//     }
+// }
+// 
+// impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
+// 
+//     fn build(&self, app: &mut App) {
+//         app
+//             .insert_resouce(TimelineResolvedCache::<K>::default())
+//             .add_event::<TimelineStepEvent<K>>()
+//             .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
+//             .add_systems(PostUpdate, send_anim_event::<K>.in_set(AnimationSystemSet::EventSender))
+//             .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
+//         ;
+//     }
+// }
 
 
 
@@ -309,48 +310,94 @@ fn type_animate<T:Component>(mut target_db: Query< &mut T >, list:Vec<(Entity,&[
 
 
 
-fn resolve_type<K>(
-    timeline_data_assets: Res<Assets<TimelineRawData>>,
-    timeline_resolved: ResMut<TimelineResolvedCache<K>>,
-    player_loaders_query: Query<&TimelinePlayerLoader>
-) where K:AnimatableValue+Send+Sync+TypePath {
-    for player in player_loaders_query {
-        if let Some( tid ) = player.type_list.get( K::typ() ) {
-            let is_exist = timeline_resolved.cache.get( &tid ).is_some();
-            if !is_exist {
+pub trait AnimatableSet {
+    fn build(app:&mut bevy_app::App);
+}
 
-            }
-            let timeline_data = timeline_data_assets.get( *id ).unwrap(); //unreachable
-            let timeline_target = &timeline_data.anims[*anim_idx].targets[*target_idx];
+impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
+    fn build(app: &mut bevy_app::App) {
+        app.add_plugins( TimelineImplPlugin::<V>::default() );
+        app.add_systems( PostUpdate, Self::step_animation );
+    }
 
+}
 
-            let timeline = match timeline_target.to_timeline::<K>() {
-                Ok(timeline) => {
-                    timeline
-                },
-                Err(e) => {
-                    //todo : handle error
-                    panic!( "timeline type({}) resolve failed : {}", K::typ(), e)
-                }
-            };
-            let id = TimelineId {
-                data_handle: id.clone(),
-                typ: K::typ(),
-                anim_idx: anim_idx,
-                target_idx: target_idx,
-            };
-
-        }
+impl <T,A,B> AnimatableSet for (A,B) where A:AnimatableValue<Target=T> + 'static, B:AnimatableValue<Target=T> + 'static  {
+    fn build(app: &mut bevy_app::App) {
+        
     }
 }
 
-// From here, the animation is interpolated and output to the actual animation target.
-// Once the animation has ended, we remove the animation flag from the bound entity.
+fn test<T,A,B>(
+    time: Res<Time>,
+    query : Query<(&mut A::Target)>,
+) where A:AnimatableValue + 'static, B:AnimatableValue + 'static {
+    A::step_animation(players, query, )
+}
 
-fn consume_step_event<K>(
-    timeline_data_assets: Res<Assets<TimelineRawData>>,
-    player_loaders_query: Query<&TimelinePlayer>,
 
-) where K:AnimatableValue+Send+Sync+TypePath {
+macro_rules! impl_animatable_set {
+    // 2개 요소 튜플
+    ($($T:ident),+ $(,)?) => {
+        impl_animatable_list!(@impl $($T),+);
+    };
 
+    // 실제 구현 생성
+    (@impl $($T:ident),+) => {
+        impl<$($T),+> AnimatableSet for ($($T,)+)
+        where
+            $($T: Animatable,)+
+        {
+            fn build(app:&mut bevy_app::App) {
+                app.
+            }
+
+            fn animate_all(&self) {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = self;
+                $(
+                    $T.animate();
+                )+
+            }
+        }
+    };
+}
+
+
+
+macro_rules! impl_animatable_set_recursive {
+    () => {};
+
+    ($head:ident $(, $tail:ident)*) => {
+        impl_animatable_set!($head $(, $tail)*);
+        impl_animatable_set_recursive!($($tail),*);
+    };
+}
+
+impl_animatable_set_recursive!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+
+
+
+
+pub struct TimelineImplPlugin<K> where K:Component<Mutability=Mutable> {
+    inner : PhantomData<K>,
+}
+
+impl <K> Default for TimelineImplPlugin<K> where K:Component<Mutability=Mutable> {
+    fn default() -> Self {
+        Self { inner : PhantomData }
+    }
+}
+
+impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
+
+    fn build(&self, app: &mut App) {
+        app
+            .insert_resouce(TimelineResolvedCache::<K>::default())
+            .add_event::<TimelineStepEvent<K>>()
+            .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
+            .add_systems(PostUpdate, send_anim_event::<K>.in_set(AnimationSystemSet::EventSender))
+            .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
+        ;
+    }
 }

@@ -4,6 +4,7 @@ use bevy_ecs::prelude::*;
 use fxhash::FxHashMap;
 use crate::timeline::Timeline;
 use crate::{TimelineAnimId, TimelineId, TimelineRawData};
+use crate::data::{TimelineUntypedAnimation, TimelineUntypedTarget};
 
 #[derive(Default)]
 pub enum TimelinePlayMode {
@@ -43,7 +44,7 @@ pub struct TimelineSession {
     progress : f32,
     speed : f32,
     play_mode : TimelinePlayMode,
-    timeline_anim_id: TimelineAnimId,
+    anim_handle: Handle<TimelineUntypedAnimation>,
     binded_targets: Vec<Option<(Entity,TimelineId)>>,
     binded_targets_idxs: HashMap<&'static str, Vec<usize>>,
 }
@@ -184,7 +185,7 @@ impl TimelinePlayer {
     }
 
     pub fn is_something_playing(&self) -> bool {
-        for session in self.sessions.values() {
+        for session in self.sessions {
             if session.is_playing {
                 return true
             }
@@ -203,7 +204,7 @@ impl TimelinePlayer {
         
     }
 
-    pub fn get_entity_keyframe(entity:Entity) -> Option<usize> {
-
+    pub fn get_playing_entities<T>( &self, assets:&Res<Assets<TimelineUntypedAnimation>> ) -> impl Iterator<Item=(Entity,TimelineUntypedTarget)> {
+        
     }
 }

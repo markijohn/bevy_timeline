@@ -1,12 +1,15 @@
 use std::borrow::Cow;
-use bevy_ecs::component::Mutable;
+use bevy_ecs::component::{ComponentMutability, Mutable};
+use bevy_ecs::entity::Entity;
 use bevy_reflect::TypePath;
-use bevy_ecs::prelude::Component;
+use bevy_ecs::prelude::{Component, Query};
 use bevy_ecs::query::QueryData;
 use bevy_math::{Vec3, Quat};
 use bevy_transform::prelude::{Transform};
 
 use serde_json::{json,Value};
+use crate::data::TimelineUntypedAnimation;
+use crate::TimelinePlayer;
 
 pub trait AnimatableValue:TypePath+Sized {
     type Target: Component<Mutability=Mutable>;
@@ -18,6 +21,28 @@ pub trait AnimatableValue:TypePath+Sized {
 
     fn typ() -> &'static str {
         Self::type_path()
+    }
+
+    fn step_animation(
+        assets: Res<Assets<TimelineUntypedAnimation>>,
+        players: Query<&TimelinePlayer>,
+        mut target_db: Query<&mut Self::Target> ) {
+        for player in players.iter() {
+            let list = player.get_playing_entities::<Self::Target>( );
+            for (entity,target) in list {
+                if let Ok(t) = target_db.get_mut(entity) {
+                    for target in targets {
+                        match target.typ {
+                            A::typ() = > {
+
+                            A::interpolate()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
     }
 }
 
@@ -46,6 +71,22 @@ impl AnimatableValue for Scale {
     fn to_value(&self) -> Value {
         let scale = self.0;
         Value::Array(vec![Value::from(scale.x), Value::from(scale.y), Value::from(scale.z)])
+    }
+}
+
+impl <T,A,B> AnimatableValue for (A,B) where T:Component<Mutability=Mutable>, A:AnimatableValue<Target=T>+Clone, B:AnimatableValue<Target=T>+Clone {
+    type Target = T;
+
+    fn interpolate(s: f32, start: Self, end: Self, out: &mut Self::Target) {
+        
+    }
+
+    fn from_value(value: &Value) -> Result<Self, Cow<'static, str>> {
+        todo!()
+    }
+
+    fn to_value(&self) -> Value {
+        todo!()
     }
 }
 
@@ -107,47 +148,3 @@ impl AnimatableValue for Translation {
         Value::Array(vec![Value::from(translation.x), Value::from(translation.y), Value::from(translation.z)])
     }
 }
-
-pub trait AnimatableSet {
-    fn build(app:&mut bevy_app::App);
-
-
-}
-
-macro_rules! impl_animatable_set {
-    // 2개 요소 튜플
-    ($($T:ident),+ $(,)?) => {
-        impl_animatable_list!(@impl $($T),+);
-    };
-
-    // 실제 구현 생성
-    (@impl $($T:ident),+) => {
-        impl<$($T),+> AnimatableSet for ($($T,)+)
-        where
-            $($T: Animatable,)+
-        {
-            fn build(app:&mut bevy_app::App) {
-                app.
-            }
-
-            fn animate_all(&self) {
-                #[allow(non_snake_case)]
-                let ($($T,)+) = self;
-                $(
-                    $T.animate();
-                )+
-            }
-        }
-    };
-}
-
-macro_rules! impl_animatable_set_recursive {
-    () => {};
-
-    ($head:ident $(, $tail:ident)*) => {
-        impl_animatable_set!($head $(, $tail)*);
-        impl_animatable_set_recursive!($($tail),*);
-    };
-}
-
-impl_animatable_list_recursive!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
