@@ -41,81 +41,8 @@ use bevy_ecs::query::QueryData;
 use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::data::TimelineRawData;
-use crate::loader::TimelineRawDataLoader;
+use crate::data::{TimelineUntypedAnimation, TimelineUntypedResolver};
 use crate::timeline::Keyframe;
-
-#[derive(Component)]
-pub struct TimelinePlayerLoader {
-    //if this value is `true` then keep [`TimelinePlayer`] in current entity and overwrite session. default is `false`
-    overwrite: bool,
-    
-    //user create from `load`, `load_all`
-    //timeline_db_id : import anima names
-    req_list: HashMap<AssetId<TimelineRawData>, Vec<Cow<'static,str>>>,
-
-    //This is just an intermediate step to minimize search duplication.
-    //inner cache. separate as type
-    //typ : (timeline_db_id, anim_idx, target_idx)
-    type_list: HashMap<String, Vec< TimelineId > >,
-}
-
-impl TimelinePlayerLoader {
-    pub fn new() -> Self {
-        Self {
-            overwrite: false,
-            req_list: HashMap::new(),
-            type_list: HashMap::new(),
-        }
-    }
-
-    pub fn load_all(self, data:AssetId<TimelineRawData>) -> Self {
-        self.load(data, vec![])
-    }
-
-    pub fn load(mut self, data:AssetId<TimelineRawData>, required_anims:Vec<Cow<'static,str>>) -> Self {
-        if let Some(exist) = self.req_list.get_mut( &data ) {
-            exist.extend( required_anims );
-        } else {
-            self.req_list.insert(data, required_anims);
-        }
-
-        self
-    }
-
-}
-
-#[derive(Hash, Clone, PartialEq, Eq)]
-pub struct TimelineAnimId {
-    pub data_id: AssetId<TimelineRawData>,
-    pub anim_idx: usize,
-}
-
-#[derive(Hash, Clone, PartialEq, Eq)]
-pub struct TimelineId {
-    pub anim_id: TimelineAnimId,
-    pub target_idx: usize,
-}
-
-impl TimelineId {
-    pub fn from_data<A:AsRef<str>,B:AsRef<str>>(data:&TimelineRawData, handle:AssetId<TimelineRawData>, anim_name:A, typ:&'static str, target_name:&str) -> Option<Self> {
-        let (anim_idx, anim) = data.anims.iter().enumerate().find( |(idx, anim)| anim.name == anim_name.as_ref() )?;
-        let (target_idx, _target) = anim.targets.iter().enumerate().find( |(idx, target)| target.name == target_name )?;
-        Some( Self {
-            anim_id: TimelineAnimId { 
-                data_id: handle,
-                anim_idx,
-            },
-            target_idx
-        } )
-    }
-}
-
-#[derive(Default, Resource)]
-struct TimelineResolvedCache<K> where K:AnimatableValue+Send+Sync{
-    cache: HashMap< TimelineId, Timeline<K>>
-}
-
 
 // Timeline animation set
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
@@ -133,25 +60,20 @@ pub enum AnimationSystemSet {
     TypedEventReceiver,
 }
 
-#[derive(Component)]
-pub struct TimelineTargetRebind;
-
-
-
 pub struct TimelinePlugin {
     resolver: HashMap<&'static str,TimelineUntypedResolver>,
 }
 
 impl TimelinePlugin {
-    pub fn register_type<T:AnimatableValue>(mut self) -> Self {
-        self.resolver.insert( T::typ(), )
+    pub fn register_type<T:Component, A:Animatable>(mut self) -> Self {
+        self.resolver.insert( A::typ(), TimelineUntypedResolver::new::<T,A>() );
         self
     }
 }
 
 impl Plugin for TimelinePlugin {
     fn build(&self, app: &mut App) {
-        app.init_asset::<TimelineRawData>()
+        app.init_asset::<TimelineUntypedAnimation>()
             .register_asset_loader(TimelineRawDataLoader);
         app.configure_sets(
             PostUpdate,
@@ -179,14 +101,14 @@ impl Plugin for TimelinePlugin {
 
 fn load_player(
     mut cmds:Commands,
-    timeline_data_assets: Res<Assets<TimelineRawData>>,
-    mut player_loaders: Query<(Entity, &mut TimelinePlayerLoader, Option<&TimelinePlayer>, Option<&Children>), Added<TimelinePlayerLoader> >,
+    timeline_data_assets: Res<Assets<TimelineUntypedAnimation>>,
+    mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), Added<TimelinePlayer> >,
     has_childs:Query<(Entity,&Name,&Children)>,
     last_level_childs:Query<(Entity,&Name), Without<Children>>,
 ) {
     //Collect named entity
 
-    for (_self_entity, player_loader, exist_player, children) in player_loaders.iter_mut() {
+    for (_self_entity, player_loader, children) in player_loaders.iter_mut() {
         let mut entity_map = HashMap::new();
         if let Some(children) = children {
             let mut dig = children.iter().collect::<Vec<Entity>>();
@@ -352,6 +274,38 @@ impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync 
     }
 }
 
+
+
+// T = Transform
+fn animate_interpol<T> (
+    players: Query<&TimelinePlayer>,
+    target: Query< &mut T >
+) {
+    for player in players.playing_sessions() {
+        let entities = player.get_next_step_entities::<T>( );
+        for (entity, targets:&TimelineUntypedAnimation) in entities {
+            if let Ok(out_target) = target.get(entity) {
+                targets.for_each( |anim| anim.interpolate() )
+            }
+        }
+    }
+
+}
+
+fn type_animate<T:Component>(mut target_db: Query< &mut T >, list:Vec<(Entity,&[TimelineUntypedTarget])> ) {
+    for (entity,target) in list {
+        if let Ok(t) = target_db.get_mut(entity) {
+            for target in targets {
+                match target.typ {
+                    A::typ() = > {
+
+                        A::interpolate()
+                    }
+                }
+            }
+        }
+    }
+}
 
 
 

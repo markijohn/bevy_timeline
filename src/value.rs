@@ -10,7 +10,7 @@ use serde_json::{json,Value};
 
 pub trait AnimatableValue:TypePath+Sized {
     type Target: Component<Mutability=Mutable>;
-    fn interpolate(&self, s:f32, next:&Self, out:&mut Self::Target);
+    fn interpolate(s:f32, start:Self, end:Self, out:&mut Self::Target);
 
     fn from_value(value:&Value) -> Result<Self, Cow<'static,str>>;
 
@@ -27,16 +27,11 @@ pub struct Scale(Vec3);
 impl AnimatableValue for Scale {
     type Target = Transform;
 
-    fn interpolate(&self, s: f32, next: &Self, out: &mut Self::Target) {
-        let scale = self.0;
-        let next_scale = next.0;
-        let out = &mut out.scale;
-        out.x = scale.x + (next_scale.x - scale.x) * s;
-        out.y = scale.y + (next_scale.y - scale.y) * s;
-        out.z = scale.z + (next_scale.z - scale.z) * s;
+    fn interpolate(s: f32, start:Self, end: Self, out: &mut Self::Target) {
+        out.scale = (end.0 - start.0) * s;
     }
 
-    fn from_value(_version: Option<f32>, value: &Value) -> Result<Self, Cow<'static, str>> {
+    fn from_value(value: &Value) -> Result<Self, Cow<'static, str>> {
         let values = value.as_array().ok_or( Cow::Borrowed("`Scale` keyframe must be [f32;3] array") )?;
         if values.len() != 3 {
             return Err( Cow::Borrowed("`Scale` keyframe must be [f32;3] array") );
@@ -60,12 +55,11 @@ pub struct Rotation(Quat);
 impl AnimatableValue for Rotation {
     type Target = Transform;
 
-    fn interpolate(&self, s: f32, next: &Self, out: &mut Self::Target) {
-        let out = &mut out.rotation;
-        *out = self.0.slerp( next.0, s);
+    fn interpolate(s: f32, prev:Self, next: Self, out: &mut Self::Target) {
+        out.rotation = prev.0.slerp( next.0, s );
     }
 
-    fn from_value(_version: Option<f32>, value: &Value) -> Result<Self, Cow<'static, str>> {
+    fn from_value(value: &Value) -> Result<Self, Cow<'static, str>> {
         let values = value.as_array().ok_or( Cow::Borrowed("`Rotation` keyframe must be [f32;3] array") )?;
         if values.len() != 4 {
             return Err( Cow::Borrowed("`Rotation` keyframe must be [f32;3] array") );
@@ -92,16 +86,11 @@ pub struct Translation(Vec3);
 impl AnimatableValue for Translation {
     type Target = Transform;
 
-    fn interpolate(&self, s: f32, next: &Self, out: &mut Self::Target) {
-        let translation = self.0;
-        let next_translation = next.0;
-        let out = &mut out.translation;
-        out.x = translation.x + (next_translation.x - translation.x) * s;
-        out.y = translation.y + (next_translation.y - translation.y) * s;
-        out.z = translation.z + (next_translation.z - translation.z) * s;
+    fn interpolate(s: f32, start:Self, end: Self, out: &mut Self::Target) {
+        out.translation = (end.0 - start.0) * s;
     }
 
-    fn from_value(_version: Option<f32>, value: &Value) -> Result<Self, Cow<'static, str>> {
+    fn from_value(value: &Value) -> Result<Self, Cow<'static, str>> {
         let values = value.as_array().ok_or( Cow::Borrowed("`Translation` keyframe must be [f32;3] array") )?;
         if values.len() != 3 {
             return Err( Cow::Borrowed("`Translation` keyframe must be [f32;3] array") );
@@ -118,3 +107,47 @@ impl AnimatableValue for Translation {
         Value::Array(vec![Value::from(translation.x), Value::from(translation.y), Value::from(translation.z)])
     }
 }
+
+pub trait AnimatableSet {
+    fn build(app:&mut bevy_app::App);
+
+
+}
+
+macro_rules! impl_animatable_set {
+    // 2개 요소 튜플
+    ($($T:ident),+ $(,)?) => {
+        impl_animatable_list!(@impl $($T),+);
+    };
+
+    // 실제 구현 생성
+    (@impl $($T:ident),+) => {
+        impl<$($T),+> AnimatableSet for ($($T,)+)
+        where
+            $($T: Animatable,)+
+        {
+            fn build(app:&mut bevy_app::App) {
+                app.
+            }
+
+            fn animate_all(&self) {
+                #[allow(non_snake_case)]
+                let ($($T,)+) = self;
+                $(
+                    $T.animate();
+                )+
+            }
+        }
+    };
+}
+
+macro_rules! impl_animatable_set_recursive {
+    () => {};
+
+    ($head:ident $(, $tail:ident)*) => {
+        impl_animatable_set!($head $(, $tail)*);
+        impl_animatable_set_recursive!($($tail),*);
+    };
+}
+
+impl_animatable_list_recursive!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);

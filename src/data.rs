@@ -10,7 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use crate::{AnimatableValue, Timeline, TimelineId, TimelineImplPlugin};
 
-type UntypedResolverFn = dyn Fn(&serde_json::Value) -> Result<(Box<dyn FnOnce()>, usize, usize, usize), Cow<'static, str>>;
+type UntypedResolverFn = dyn Fn(&serde_json::Value) -> Result<(&'static str, usize, usize, usize, Box<dyn FnOnce()>), Cow<'static, str>>;
 
 pub struct TimelineUntypedResolver {
     typ:&'static str,
@@ -39,38 +39,51 @@ impl TimelineUntypedResolver {
                 let dropper = Box::new( move || {
                     unsafe { Vec::from_raw_parts(addr as *mut V, len, capacity); }
                 });
-                Ok( ( dropper, addr, len, capacity ) )
+                Ok( ( V::typ(), addr, len, capacity, dropper ) )
             })
         }
     }
 
-    pub fn resolve(&self, value:&Value) -> Result<(Box<dyn FnOnce()>, usize, usize, usize), Cow<'static, str>> {
+    pub fn resolve(&self, value:&Value) -> Result<(&'static str, usize, usize, usize, Box<dyn FnOnce()>), Cow<'static, str>> {
         (self.resolver)(value)
     }
 }
 
-#[derive(Deserialize)]
-pub struct TimelineAnimationTarget {
-    pub name: String,
-    pub typ: String,
-    pub duration: f32,
-    pub keyframes: Vec<serde_json::Value>,
-}
 
-impl TimelineAnimationTarget {
-    pub fn to_timeilne<K>(&self) -> Result<Timeline<K>, Cow<'static, str>> 
-        where K:AnimatableValue + Send + Sync {
-        let keyframes = Keyframe::<K>::load_frames(&self.keyframes)?;
-        Ok( Timeline::new(self.name.clone(), self.duration, keyframes) )
-    }
-}
 
 #[derive(Deserialize)]
 struct TimelineAnimationNotResolved {
     pub name: String,
     pub bind_names: Vec<Vec<String>>,
     pub duration: f32,
-    pub targets: Vec<TimelineAnimationTarget>,
+    pub targets: Vec<TimelineAnimationTargetNotResolved>,
+}
+
+#[derive(Deserialize)]
+pub struct TimelineAnimationTargetNotResolved {
+    pub name: String,
+    pub typ: String,
+    pub duration: f32,
+    pub keyframes: Vec<serde_json::Value>,
+}
+
+// impl TimelineAnimationTarget {
+//     pub fn to_timeilne<K>(&self) -> Result<Timeline<K>, Cow<'static, str>>
+//         where K:AnimatableValue + Send + Sync {
+//         let keyframes = Keyframe::<K>::load_frames(&self.keyframes)?;
+//         Ok( Timeline::new(self.name.clone(), self.duration, keyframes) )
+//     }
+// }
+
+#[derive(TypePath,Asset)]
+pub struct TimelineAnimationSet {
+    anims: Vec<TimelineUntypedAnimation>
+}
+
+impl TimelineAnimationSet {
+    pub fn from(resolver:HashMap<&'static str,TimelineUntypedResolver>, value:&Value) -> Self {
+        serde_json::from_value( value );
+    }
 }
 
 #[derive(TypePath,Asset)]
@@ -99,16 +112,16 @@ pub struct TimelineUntypedTarget {
 
 
 impl TimelineUntypedTarget {
-    pub fn from(bind_idx:usize, type_resolver:&TimelineUntypedResolver, value:&Value) -> Self {
-        let (typ, addr,length,capacity,dropper) = type_resolver.resolve( &value );
-        Self {
+    pub fn from(bind_idx:usize, type_resolver:&TimelineUntypedResolver, value:&Value) -> Result<Self, Cow<'static,str>> {
+        let (typ, addr,length,capacity,dropper) = type_resolver.resolve( &value )?;
+        Ok( Self {
             bind_idx,
             typ,
             addr,
             length,
             capacity,
             dropper
-        }
+        } )
     }
     pub fn get_typed<T>(&self) -> &[TimelineKeyframe<T>] {
         unsafe {
