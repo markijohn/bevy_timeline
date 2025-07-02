@@ -4,7 +4,7 @@ use bevy_timeline::{TimelinePlayer, TimelinePlugin};
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(TimelinePlugin)
+        .add_plugins(TimelinePlugin::default())
         .add_systems(Startup, setup)
         .run();
 }

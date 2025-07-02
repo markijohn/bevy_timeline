@@ -129,7 +129,7 @@ impl TimelinePlayer {
         Default::default()
     }
 
-    pub fn create_session(&mut self, timeline_anim_id:TimelineAnimId, binded_targets:Vec<Option<(Entity,TimelineId)>>) {
+    pub fn create_session(&mut self, timeline_anim_id:&TimelineUntypedAnimation, binded_targets:Vec<Option<(Entity,TimelineId)>>) {
         self.sessions.push(TimelineSession {
             is_loop: false,
             is_loop_interpolation: true,

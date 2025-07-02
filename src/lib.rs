@@ -25,6 +25,7 @@ mod value;
 mod loader;
 mod data;
 
+use std::any::TypeId;
 use std::borrow::Cow;
 use std::collections::HashMap;
 pub use value::{AnimatableValue, Scale, Rotation, Translation};
@@ -42,32 +43,66 @@ use bevy_ecs::query::QueryData;
 use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
+use thiserror::Error;
 use crate::data::{TimelineUntypedAnimation, TimelineUntypedResolver, TimelineUntypedTarget};
 use crate::timeline::Keyframe;
+
+#[non_exhaustive]
+#[derive(Debug, Error)]
+pub enum TimelineError {
+    /// [IO Error](std::io::Error)
+    #[error("JSON data load failed: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// [JSON Error](serde_json::error::Error)
+    #[error("Could not parse the JSON: {0}")]
+    JsonError(#[from] serde_json::error::Error),
+
+    #[error("Json value type is incorrect: {0}")]
+    IncorrectValueType(&'static str),
+
+    #[error("TimelineTarget cast failed(type not match) : {0} -> {1}")]
+    TypeNotMatch{ request:&'static str, actual:&'static str },
+
+    #[error("Unknown Timeline error : {0}")]
+    UnknownError( Cow<'static,str> )
+}
 
 // Timeline animation set
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum AnimationSystemSet {
-    /// Query [`TimelinePlayerLoader`] and load [`TimelineRawData`] from asset
+    /// Binding [`Entity`] and [`TimelineUntypedTarget`]
     PreparePlayer,
 
-    /// Each [`TimelineImplPlugin`] interprets the data and stores it in the [`TimelineResolvedCache`]
-    ResolveType,
-
-    /// [`TimelinePlayer`] sends `Event` via the saved session (entity, animation information)
-    EventSender,
-
-    /// Each [`TimelineImplPlugin`] receive the `Event` and dispatch
-    TypedEventReceiver,
+    /// Handles animation processing from the [`TimelinePlayer`] entity and its children.
+    Animate,
 }
 
 pub struct TimelinePlugin {
     resolver: HashMap<&'static str,TimelineUntypedResolver>,
+    registers: HashMap< TypeId, Box<dyn Fn(&mut App) + 'static> >,
 }
 
+impl Default for TimelinePlugin {
+    fn default() -> Self {
+        let plugin = Self::empty();
+        plugin.register_type::<(Scale, Rotation, Translation)>(  );
+        plugin
+    }
+}
+
+
 impl TimelinePlugin {
-    pub fn register_type<T:Component, A:Animatable>(mut self) -> Self {
-        self.resolver.insert( A::typ(), TimelineUntypedResolver::new::<T,A>() );
+    pub fn empty() -> Self {
+        TimelinePlugin {
+            resolver: Default::default(),
+            registers: Default::default(),
+        }
+    }
+    pub fn register_type<A:AnimatableSet>( mut self ) {
+        for resolver in A::create_resolvers() {
+            self.resolver.insert( resolver.typ(), resolver );
+        }
         self
     }
 }
@@ -80,17 +115,9 @@ impl Plugin for TimelinePlugin {
             PostUpdate,
             (
                 AnimationSystemSet::PreparePlayer,
-                AnimationSystemSet::ResolveType,
-                AnimationSystemSet::EventSender,
-                AnimationSystemSet::TypedEventReceiver,
+                AnimationSystemSet::Animate,
             ).chain()
         );
-        app
-            .add_plugins( (
-                TimelineImplPlugin::<Scale>::default(),
-                TimelineImplPlugin::<Rotation>::default(),
-                TimelineImplPlugin::<Translation>::default(),
-            ) );
         app
             .add_systems(PostUpdate, load_player.in_set(AnimationSystemSet::PreparePlayer))
 
@@ -99,6 +126,53 @@ impl Plugin for TimelinePlugin {
 }
 
 
+
+fn bind_player(
+    mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), With<Added<TimelinePlayer>>>,
+    childs: Query<(Entity, &Name, Option<&Children>)>,
+) {
+    // Collect entity paths: Vec<(Entity, Vec<&str>)>
+    for (_self_entity, player, children) in player_loaders.iter_mut() {
+        player.sessions()
+        let mut entity_paths: Vec<(Entity, Vec<&str>)> = Vec::new();
+
+        if let Some(children) = children {
+            // DFS를 위한 스택: (entity, path_to_parent)
+            let mut stack: Vec<(Entity, Vec<&str>)> = Vec::new();
+
+            // 루트의 자식들을 스택에 추가
+            for child in children.iter() {
+                stack.push((child, Vec::new()));
+            }
+
+            while let Some((current_entity, parent_path)) = stack.pop() {
+                if let Ok((entity, name, children)) = childs.get(current_entity) {
+                    // 현재 노드까지의 경로 생성
+                    let mut current_path = parent_path.clone();
+                    current_path.push(name.as_str());
+
+                    // 결과에 추가
+                    entity_paths.push((entity, current_path.clone()));
+
+                    // 자식들을 스택에 추가
+                    if let Some(in_children) = children {
+                        for child in in_children.iter() {
+                            stack.push((child, current_path.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
+        // 결과 출력 (디버깅용)
+        for (entity, path) in &entity_paths {
+            println!("Entity {:?}: {:?}", entity, path);
+        }
+
+        // entity_paths를 사용하여 필요한 작업 수행
+        // ...
+    }
+}
 
 fn load_player(
     mut cmds:Commands,
@@ -293,48 +367,48 @@ fn animate_interpol<T> (
 
 }
 
-fn type_animate<T:Component>(mut target_db: Query< &mut T >, list:Vec<(Entity,&[TimelineUntypedTarget])> ) {
-    for (entity,target) in list {
-        if let Ok(t) = target_db.get_mut(entity) {
-            for target in targets {
-                match target.typ {
-                    A::typ() = > {
 
-                        A::interpolate()
-                    }
+
+pub trait AnimatableSet {
+    type Target:Component<Mutability=Mutable>;
+    fn build(app:&mut bevy_app::App);
+
+    fn step(
+        assets: Res<Assets<TimelineUntypedAnimation>>,
+        players: Query<&TimelinePlayer>,
+        target_db: Query<&mut Self::Target>,
+    );
+
+    fn create_resolvers() -> Vec<TimelineUntypedResolver>;
+}
+
+impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
+    type Target = V::Target;
+    fn build(app: &mut bevy_app::App) {
+        app.add_systems( PostUpdate, Self::step );
+    }
+
+    fn step(
+        assets: Res<Assets<TimelineUntypedAnimation>>,
+        players: Query<&TimelinePlayer>,
+        mut target_db: Query<&mut Self::Target>,
+    ) {
+        for player in players {
+            for (entity, timeline_target) in player.get_playing_entities::<V::Target>( &assets ) {
+                let timeline = timeline_target.get_typed::<V>();
+                if let Ok(target) = target_db.get_mut( entity ) {
+                    V::interpolate(s, start, end, target);
                 }
             }
         }
     }
-}
 
-
-
-pub trait AnimatableSet {
-    fn build(app:&mut bevy_app::App);
-}
-
-impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
-    fn build(app: &mut bevy_app::App) {
-        app.add_plugins( TimelineImplPlugin::<V>::default() );
-        app.add_systems( PostUpdate, Self::step_animation );
-    }
-
-}
-
-impl <T,A,B> AnimatableSet for (A,B) where A:AnimatableValue<Target=T> + 'static, B:AnimatableValue<Target=T> + 'static  {
-    fn build(app: &mut bevy_app::App) {
-        
+    fn create_resolvers() -> Vec<TimelineUntypedResolver> {
+        vec![
+            TimelineUntypedResolver::new::<V>()
+        ]
     }
 }
-
-fn test<T,A,B>(
-    time: Res<Time>,
-    query : Query<(&mut A::Target)>,
-) where A:AnimatableValue + 'static, B:AnimatableValue + 'static {
-    A::step_animation(players, query, )
-}
-
 
 macro_rules! impl_animatable_set {
     // 2개 요소 튜플
@@ -363,41 +437,18 @@ macro_rules! impl_animatable_set {
     };
 }
 
-
-
-macro_rules! impl_animatable_set_recursive {
-    () => {};
-
-    ($head:ident $(, $tail:ident)*) => {
-        impl_animatable_set!($head $(, $tail)*);
-        impl_animatable_set_recursive!($($tail),*);
-    };
-}
-
-impl_animatable_set_recursive!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
-
-
-
-
-pub struct TimelineImplPlugin<K> where K:Component<Mutability=Mutable> {
-    inner : PhantomData<K>,
-}
-
-impl <K> Default for TimelineImplPlugin<K> where K:Component<Mutability=Mutable> {
-    fn default() -> Self {
-        Self { inner : PhantomData }
-    }
-}
-
-impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
-
-    fn build(&self, app: &mut App) {
-        app
-            .insert_resouce(TimelineResolvedCache::<K>::default())
-            .add_event::<TimelineStepEvent<K>>()
-            .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
-            .add_systems(PostUpdate, send_anim_event::<K>.in_set(AnimationSystemSet::EventSender))
-            .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
-        ;
-    }
-}
+impl_animatable_set!(T1);
+impl_animatable_set!(T1, T2);
+impl_animatable_set!(T1, T2, T3);
+impl_animatable_set!(T1, T2, T3, T4);
+impl_animatable_set!(T1, T2, T3, T4, T5);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+impl_animatable_set!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);

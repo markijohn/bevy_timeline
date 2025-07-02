@@ -1,3 +1,4 @@
+use std::any::TypeId;
 use std::borrow::Cow;
 use bevy_ecs::component::{ComponentMutability, Mutable};
 use bevy_ecs::entity::Entity;
@@ -11,7 +12,7 @@ use serde_json::{json,Value};
 use crate::data::TimelineUntypedAnimation;
 use crate::TimelinePlayer;
 
-pub trait AnimatableValue:TypePath+Sized {
+pub trait AnimatableValue:Sized+'static {
     type Target: Component<Mutability=Mutable>;
     fn interpolate(s:f32, start:Self, end:Self, out:&mut Self::Target);
 
@@ -20,29 +21,7 @@ pub trait AnimatableValue:TypePath+Sized {
     fn to_value(&self) -> Value;
 
     fn typ() -> &'static str {
-        Self::type_path()
-    }
-
-    fn step_animation(
-        assets: Res<Assets<TimelineUntypedAnimation>>,
-        players: Query<&TimelinePlayer>,
-        mut target_db: Query<&mut Self::Target> ) {
-        for player in players.iter() {
-            let list = player.get_playing_entities::<Self::Target>( );
-            for (entity,target) in list {
-                if let Ok(t) = target_db.get_mut(entity) {
-                    for target in targets {
-                        match target.typ {
-                            A::typ() = > {
-
-                            A::interpolate()
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
+        std::any::type_name::<Self>()
     }
 }
 

@@ -8,23 +8,26 @@ use bevy_reflect::TypePath;
 use crate::timeline::Keyframe;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::{AnimatableValue, Timeline, TimelineId, TimelineImplPlugin};
+use crate::{AnimatableValue, Timeline, TimelineError, TimelineId, TimelineImplPlugin};
 
-type UntypedResolverFn = dyn Fn(&serde_json::Value) -> Result<(&'static str, usize, usize, usize, Box<dyn FnOnce()>), Cow<'static, str>>;
+type UntypedResolverFn = dyn Fn(&serde_json::Value) -> Result<TimelineUntypedResolvedData, Cow<'static, str>>;
 
 pub struct TimelineUntypedResolver {
+    pub typ:&'static str,
+    resolver: Box<UntypedResolverFn>
+}
+
+struct TimelineUntypedResolvedData {
     typ:&'static str,
-    plugin_registar: Box<dyn Fn(&mut App)>,
-    pub resolver: Box<UntypedResolverFn>
+    addr: usize,
+    len: usize,
+    dropper: Box<dyn FnOnce()>
 }
 
 impl TimelineUntypedResolver {
     pub fn new<V>( ) -> Self where V:AnimatableValue + Send + Sync + TypePath + 'static {
         Self {
             typ: V::typ(),
-            plugin_registar: Box::new( |app:&mut App| {
-                app.add_plugins( TimelineImplPlugin::<V>::default() );
-            }),
             resolver: Box::new( |value| {
                 let array = value.as_array().ok_or(Cow::Borrowed("expected array"))?;
                 let mut vec = Vec::with_capacity(array.len());
@@ -39,12 +42,12 @@ impl TimelineUntypedResolver {
                 let dropper = Box::new( move || {
                     unsafe { Vec::from_raw_parts(addr as *mut V, len, capacity); }
                 });
-                Ok( ( V::typ(), addr, len, capacity, dropper ) )
+                Ok( TimelineUntypedResolvedData{ typ:V::typ(), addr, len, dropper } )
             })
         }
     }
 
-    pub fn resolve(&self, value:&Value) -> Result<(&'static str, usize, usize, usize, Box<dyn FnOnce()>), Cow<'static, str>> {
+    pub fn resolve(&self, value:&Value) -> Result<TimelineUntypedResolvedData, Cow<'static, str>> {
         (self.resolver)(value)
     }
 }
@@ -67,13 +70,6 @@ pub struct TimelineAnimationTargetNotResolved {
     pub keyframes: Vec<serde_json::Value>,
 }
 
-// impl TimelineAnimationTarget {
-//     pub fn to_timeilne<K>(&self) -> Result<Timeline<K>, Cow<'static, str>>
-//         where K:AnimatableValue + Send + Sync {
-//         let keyframes = Keyframe::<K>::load_frames(&self.keyframes)?;
-//         Ok( Timeline::new(self.name.clone(), self.duration, keyframes) )
-//     }
-// }
 
 #[derive(TypePath,Asset)]
 pub struct TimelineAnimationSet {
@@ -100,32 +96,35 @@ pub struct TimelineKeyframe<T> {
 }
 
 
-
+#[derive(TypePath,Asset)]
 pub struct TimelineUntypedTarget {
     pub bind_idx: usize,
     pub typ: &'static str,
     addr: usize,
     length: usize,
-    capacity: usize,
     dropper : Box<dyn Fn() + Send + Sync + 'static>,
 }
 
 
 impl TimelineUntypedTarget {
     pub fn from(bind_idx:usize, type_resolver:&TimelineUntypedResolver, value:&Value) -> Result<Self, Cow<'static,str>> {
-        let (typ, addr,length,capacity,dropper) = type_resolver.resolve( &value )?;
+        let TimelineUntypedResolvedData{typ, addr,len,dropper, .. } = type_resolver.resolve( &value )?;
         Ok( Self {
             bind_idx,
             typ,
             addr,
             length,
-            capacity,
             dropper
         } )
     }
-    pub fn get_typed<T>(&self) -> &[TimelineKeyframe<T>] {
+    pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
         unsafe {
-            std::slice::from_raw_parts(self.addr as *const TimelineKeyframe<T>, self.length)
+            if T::typ() == self.typ {
+                Ok( std::slice::from_raw_parts(self.addr as *const TimelineKeyframe<T>, self.length) )
+            } else {
+                Err( TimelineError::TypeNotMatch {request:T::typ(), actual: self.typ})
+            }
+
         }
     }
 }
