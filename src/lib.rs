@@ -47,6 +47,8 @@ use thiserror::Error;
 use crate::data::{TimelineUntypedAnimation, TimelineUntypedResolver, TimelineUntypedTarget};
 use crate::timeline::Keyframe;
 
+pub type DefaultTransformSet = (Scale, Rotation, Translation);
+
 #[non_exhaustive]
 #[derive(Debug, Error)]
 pub enum TimelineError {
@@ -78,36 +80,36 @@ pub enum AnimationSystemSet {
     Animate,
 }
 
-pub struct TimelinePlugin {
-    resolver: HashMap<&'static str,TimelineUntypedResolver>,
-    registers: HashMap< TypeId, Box<dyn Fn(&mut App) + 'static> >,
+#[derive(Default)]
+pub struct TimelinePlugin<B:TimelineImplSets> {
+    inner: PhantomData<B>,
+    // resolver: HashMap<&'static str,TimelineUntypedResolver>,
+    // registers: HashMap< TypeId, Box<dyn Fn(&mut App) + 'static> >,
 }
 
-impl Default for TimelinePlugin {
-    fn default() -> Self {
-        let plugin = Self::empty();
-        plugin.register_type::<(Scale, Rotation, Translation)>(  );
-        plugin
-    }
-}
+// impl Default for TimelinePlugin<B:TimelineImplSets>  {
+//     fn default() -> Self {
+//         let plugin = Self::empty();
+//         plugin.register_type::<(Scale, Rotation, Translation)>(  );
+//         plugin
+//     }
+// }
+// impl TimelinePlugin {
+//     pub fn empty() -> Self {
+//         TimelinePlugin {
+//             resolver: Default::default(),
+//             registers: Default::default(),
+//         }
+//     }
+//     pub fn register_type<A:AnimatableSet>( mut self ) {
+//         for resolver in A::create_resolvers() {
+//             self.resolver.insert( resolver.typ(), resolver );
+//         }
+//         self
+//     }
+// }
 
-
-impl TimelinePlugin {
-    pub fn empty() -> Self {
-        TimelinePlugin {
-            resolver: Default::default(),
-            registers: Default::default(),
-        }
-    }
-    pub fn register_type<A:AnimatableSet>( mut self ) {
-        for resolver in A::create_resolvers() {
-            self.resolver.insert( resolver.typ(), resolver );
-        }
-        self
-    }
-}
-
-impl Plugin for TimelinePlugin {
+impl <B> Plugin for TimelinePlugin<B:TimelineImplSets> {
     fn build(&self, app: &mut App) {
         app.init_asset::<TimelineUntypedAnimation>()
             .register_asset_loader(TimelineRawDataLoader);
@@ -119,16 +121,16 @@ impl Plugin for TimelinePlugin {
             ).chain()
         );
         app
-            .add_systems(PostUpdate, load_player.in_set(AnimationSystemSet::PreparePlayer))
-
+            .add_systems(PostUpdate, bind_target_entities.in_set(AnimationSystemSet::PreparePlayer))
+        B::build( app );
         ;
     }
 }
 
 
 
-fn bind_player(
-    mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), With<Added<TimelinePlayer>>>,
+fn bind_target_entities(
+    mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), Added<TimelinePlayer>>,
     childs: Query<(Entity, &Name, Option<&Children>)>,
 ) {
     // Collect entity paths: Vec<(Entity, Vec<&str>)>
@@ -350,23 +352,46 @@ fn prepare_animation<K:AnimatableValue>(
 // }
 
 
-
-// T = Transform
-fn animate_interpol<T> (
-    players: Query<&TimelinePlayer>,
-    target: Query< &mut T >
-) {
-    for player in players.playing_sessions() {
-        let entities = player.get_next_step_entities::<T>( );
-        for (entity, targets:&TimelineUntypedAnimation) in entities {
-            if let Ok(out_target) = target.get(entity) {
-                targets.for_each( |anim| anim.interpolate() )
-            }
-        }
-    }
-
+pub trait TimelineImplSets {
+    fn build(app:&mut App);
+    
+    fn resolve_keyframes(typ:&'static str, keyframes:&[Value]);
 }
 
+
+macro_rules! impl_timeline_impl_sets {
+    ( $($tuple:ident),+ ) => {
+        impl < $($tuple),+ > TimelineImplSets for ( $($tuple,)+ )
+        where $($tuple:AnimatableSet,) +
+        {
+            fn add_systems(app:&mut App) {
+                $(
+                <$tuple as AnimatableSet>::build( app );
+                )+
+            }
+            
+            fn resolve_keyframes(typ:&'static str, keyframes:&[Value]) {
+                todo!()
+            }
+        }
+    };
+}
+
+impl_timeline_impl_sets!( T1 );
+impl_timeline_impl_sets!( T1, T2 );
+impl_timeline_impl_sets!( T1, T2, T3 );
+impl_timeline_impl_sets!( T1, T2, T3, T4 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14 );
+impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15 );
 
 
 pub trait AnimatableSet {
@@ -385,7 +410,7 @@ pub trait AnimatableSet {
 impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
     type Target = V::Target;
     fn build(app: &mut bevy_app::App) {
-        app.add_systems( PostUpdate, Self::step );
+        app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
     }
 
     fn step(
@@ -411,13 +436,7 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
 }
 
 macro_rules! impl_animatable_set {
-    // 2개 요소 튜플
-    ($($T:ident),+ $(,)?) => {
-        impl_animatable_list!(@impl $($T),+);
-    };
-
-    // 실제 구현 생성
-    (@impl $($T:ident),+) => {
+    ( ($($T:ident),+) ) => {
         impl<$($T),+> AnimatableSet for ($($T,)+)
         where
             $($T: Animatable,)+

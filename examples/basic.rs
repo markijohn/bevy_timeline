@@ -15,6 +15,7 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    
     // circular base
     commands.spawn((
         Mesh3d(meshes.add(Circle::new(4.0))),
