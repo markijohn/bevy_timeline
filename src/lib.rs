@@ -109,9 +109,11 @@ pub struct TimelinePlugin<B:TimelineImplSets> {
 //     }
 // }
 
-impl <B> Plugin for TimelinePlugin<B:TimelineImplSets> {
+impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets {
     fn build(&self, app: &mut App) {
-        app.init_asset::<TimelineUntypedAnimation>()
+        app
+            .init_asset::<TimelineUntypedAnimation>()
+            .init_asset::<TimelineUntypedTarget>()
             .register_asset_loader(TimelineRawDataLoader);
         app.configure_sets(
             PostUpdate,
@@ -135,14 +137,14 @@ fn bind_target_entities(
 ) {
     // Collect entity paths: Vec<(Entity, Vec<&str>)>
     for (_self_entity, player, children) in player_loaders.iter_mut() {
-        player.sessions()
+
         let mut entity_paths: Vec<(Entity, Vec<&str>)> = Vec::new();
 
         if let Some(children) = children {
-            // DFS를 위한 스택: (entity, path_to_parent)
+            //entity & path to parent
             let mut stack: Vec<(Entity, Vec<&str>)> = Vec::new();
 
-            // 루트의 자식들을 스택에 추가
+            //add to stack
             for child in children.iter() {
                 stack.push((child, Vec::new()));
             }
@@ -355,7 +357,7 @@ fn prepare_animation<K:AnimatableValue>(
 pub trait TimelineImplSets {
     fn build(app:&mut App);
     
-    fn resolve_keyframes(typ:&'static str, keyframes:&[Value]);
+    fn try_resolve_target(typ:&'static str, keyframes:&[Value]);
 }
 
 
@@ -366,11 +368,11 @@ macro_rules! impl_timeline_impl_sets {
         {
             fn add_systems(app:&mut App) {
                 $(
-                <$tuple as AnimatableSet>::build( app );
+                <$tuple as AnimatableSet>::add_system( app );
                 )+
             }
             
-            fn resolve_keyframes(typ:&'static str, keyframes:&[Value]) {
+            fn try_resolve_target(typ:&'static str, keyframes:&[Value]) {
                 todo!()
             }
         }
@@ -396,7 +398,9 @@ impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13
 
 pub trait AnimatableSet {
     type Target:Component<Mutability=Mutable>;
-    fn build(app:&mut bevy_app::App);
+    fn add_system(app:&mut bevy_app::App) {
+        app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
+    }
 
     fn step(
         assets: Res<Assets<TimelineUntypedAnimation>>,
@@ -404,53 +408,56 @@ pub trait AnimatableSet {
         target_db: Query<&mut Self::Target>,
     );
 
-    fn create_resolvers() -> Vec<TimelineUntypedResolver>;
+    fn try_resolve_target(typ:&'static str, value:&Value) -> Option<Result<TimelineUntypedTarget,TimelineError>>;
 }
 
 impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
     type Target = V::Target;
-    fn build(app: &mut bevy_app::App) {
-        app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
-    }
 
     fn step(
-        assets: Res<Assets<TimelineUntypedAnimation>>,
+        assets: Res<Assets<TimelineUntypedTarget>>,
         players: Query<&TimelinePlayer>,
         mut target_db: Query<&mut Self::Target>,
     ) {
         for player in players {
-            for (entity, timeline_target) in player.get_playing_entities::<V::Target>( &assets ) {
-                let timeline = timeline_target.get_typed::<V>();
-                if let Ok(target) = target_db.get_mut( entity ) {
-                    V::interpolate(s, start, end, target);
+            for (entity, timeline_target) in player.get_playing_entities::<V::Target>() {
+                if let Some(timeline_target) = assets.get( &timeline_target ) {
+                    if let Ok(timeline) = timeline_target.get_typed::<V>() {
+                        if let Ok(target) = target_db.get_mut( entity ) {
+                            V::interpolate(s, start, end, target);
+                        }
+                    }
                 }
             }
         }
     }
 
-    fn create_resolvers() -> Vec<TimelineUntypedResolver> {
-        vec![
-            TimelineUntypedResolver::new::<V>()
-        ]
+    fn try_resolve_target(typ:&'static str, value:&[Value]) -> Option<Result<TimelineUntypedTarget,TimelineError>> {
+        if typ == V::typ() {
+            Some( TimelineUntypedTarget::from::<V>(value) )
+        } else {
+            None
+        }
     }
 }
 
 macro_rules! impl_animatable_set {
-    ( ($($T:ident),+) ) => {
+    ( $($T:ident),+ ) => {
         impl<$($T),+> AnimatableSet for ($($T,)+)
         where
             $($T: Animatable,)+
         {
             fn build(app:&mut bevy_app::App) {
-                app.
+                app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
             }
 
-            fn animate_all(&self) {
-                #[allow(non_snake_case)]
-                let ($($T,)+) = self;
-                $(
-                    $T.animate();
-                )+
+            fn try_resolve_target(typ:&'static str, binded_idx:usize, value:&[Value]) -> Option<Result<TimelineUntypedTarget,TimelineError>> {
+                match typ {
+                    $(
+                    $T::typ() =>
+                    )+
+                }
+                None
             }
         }
     };

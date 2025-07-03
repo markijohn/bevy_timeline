@@ -1,21 +1,20 @@
-{
-  "version" : { "_timeline" :  0.1, "CustomTyped": 1.1},
-  "clips" : [
-    {
-      "name": "BasicTest",
-      "duration" : 5.0,
-      "_self" : {
-        "type" : "Translation",
-        "keyframes" : [
-          {"time": 0.0,"data": {}}, {"time": 1.0, "data": {}}
-        ]
-      },
-      "some_child" : {
-        "type" : "ColorMaterial",
-        "keyframes" : [
-          {"time": 0.0,"data": 4321453532}, {"time": 0.5, "data": 43215321232}
-        ]
-      }
+[
+  {
+    "name": "BasicTest",
+    "duration" : 5.0,
+    "_self" : {
+      "typ" : "Translation",
+      "target" : ["",""],
+      "keyframes" : [
+        {"time": 0.0,"data": {}}, {"time": 1.0, "data": {}}
+      ]
+    },
+    "some_child" : {
+      "typ" : "ColorMaterial",
+      "target" : ["",""],
+      "keyframes" : [
+        {"time": 0.0,"data": 4321453532}, {"time": 0.5, "data": 43215321232}
+      ]
     }
-  ]
-}
+  }
+]

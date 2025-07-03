@@ -1,93 +1,30 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use bevy_app::App;
-use bevy_asset::AssetId;
+use bevy_asset::{AssetId, Handle};
 use bevy_asset::prelude::Asset;
 use bevy_asset::uuid::Uuid;
 use bevy_reflect::TypePath;
 use crate::timeline::Keyframe;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::{AnimatableValue, Timeline, TimelineError, TimelineId, TimelineImplPlugin};
-
-type UntypedResolverFn = dyn Fn(&serde_json::Value) -> Result<TimelineUntypedResolvedData, Cow<'static, str>>;
-
-pub struct TimelineUntypedResolver {
-    pub typ:&'static str,
-    resolver: Box<UntypedResolverFn>
-}
-
-struct TimelineUntypedResolvedData {
-    typ:&'static str,
-    addr: usize,
-    len: usize,
-    dropper: Box<dyn FnOnce()>
-}
-
-impl TimelineUntypedResolver {
-    pub fn new<V>( ) -> Self where V:AnimatableValue + Send + Sync + TypePath + 'static {
-        Self {
-            typ: V::typ(),
-            resolver: Box::new( |value| {
-                let array = value.as_array().ok_or(Cow::Borrowed("expected array"))?;
-                let mut vec = Vec::with_capacity(array.len());
-                for v in array {
-                    vec.push( V::from_value(&v)? );
-                }
-                
-                let addr = vec.as_mut_ptr() as usize;
-                let len = vec.len();
-                let capacity = vec.capacity();
-                vec.leak();
-                let dropper = Box::new( move || {
-                    unsafe { Vec::from_raw_parts(addr as *mut V, len, capacity); }
-                });
-                Ok( TimelineUntypedResolvedData{ typ:V::typ(), addr, len, dropper } )
-            })
-        }
-    }
-
-    pub fn resolve(&self, value:&Value) -> Result<TimelineUntypedResolvedData, Cow<'static, str>> {
-        (self.resolver)(value)
-    }
-}
-
-
-
-#[derive(Deserialize)]
-struct TimelineAnimationNotResolved {
-    pub name: String,
-    pub bind_names: Vec<Vec<String>>,
-    pub duration: f32,
-    pub targets: Vec<TimelineAnimationTargetNotResolved>,
-}
-
-#[derive(Deserialize)]
-pub struct TimelineAnimationTargetNotResolved {
-    pub name: String,
-    pub typ: String,
-    pub duration: f32,
-    pub keyframes: Vec<serde_json::Value>,
-}
-
+use crate::{AnimatableValue, Timeline, TimelineError, TimelineImplSets};
 
 #[derive(TypePath,Asset)]
-pub struct TimelineAnimationSet {
-    anims: Vec<TimelineUntypedAnimation>
-}
-
-impl TimelineAnimationSet {
-    pub fn from(resolver:HashMap<&'static str,TimelineUntypedResolver>, value:&Value) -> Self {
-        serde_json::from_value( value );
-    }
-}
-
-#[derive(TypePath,Asset)]
-pub struct TimelineUntypedAnimation {
+pub struct TimelineAnimation {
     pub name: String,
-    pub bind_names: Vec<Vec<String>>,
     pub duration: f32,
     pub targets: Vec<TimelineUntypedTarget>,
+}
+
+impl TimelineAnimation {
+    pub fn load_animation<V:TimelineImplSets>(&self) -> Result<TimelineAnimation, TimelineError> {
+        V::resolve_keyframes()
+    }
+
+    pub fn load_animations<V>() -> Result<TimelineAnimation, TimelineError> {
+
+    }
 }
 
 pub struct TimelineKeyframe<T> {
@@ -95,11 +32,19 @@ pub struct TimelineKeyframe<T> {
     pub data:T
 }
 
+impl <T> TimelineKeyframe<T> where T:AnimatableValue {
+    pub fn from<V:AnimatableValue>(value:&Value) -> Result<TimelineKeyframe<T>, TimelineError>{
+        let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
+        let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
+        let data = V::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
+        Ok( TimelineKeyframe { time,data } )
+    }
+}
 
 #[derive(TypePath,Asset)]
 pub struct TimelineUntypedTarget {
-    pub bind_idx: usize,
     pub typ: &'static str,
+    target: Vec<String>,
     addr: usize,
     length: usize,
     dropper : Box<dyn Fn() + Send + Sync + 'static>,
@@ -107,16 +52,36 @@ pub struct TimelineUntypedTarget {
 
 
 impl TimelineUntypedTarget {
-    pub fn from(bind_idx:usize, type_resolver:&TimelineUntypedResolver, value:&Value) -> Result<Self, Cow<'static,str>> {
-        let TimelineUntypedResolvedData{typ, addr,len,dropper, .. } = type_resolver.resolve( &value )?;
+    pub fn from<V:AnimatableValue>(value:&Value) -> Result<Self, TimelineError> {
+        let map = value.as_object().ok_or( TimelineError::IncorrectValueType("target must be object") )?;
+        let target_value = map.get("target").ok_or(TimelineError::IncorrectValueType("target not exist"))?
+            .as_array().ok_or(TimelineError::IncorrectValueType("target must be string array"))?;
+        let mut target = Vec::with_capacity(target_value.len());
+        for i in target_value {
+            target.push( value.as_str().ok_or(TimelineError::IncorrectValueType("target must be string"))?.to_string() );
+        }
+        let value = map.get("keyframes").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
+            .as_array().ok_or(TimelineError::IncorrectValueType("keyframes is not array"))?;
+        let mut keyframes = Vec::<TimelineKeyframe<V>>::with_capacity( value.len() );
+        for i in value {
+            keyframes.push( TimelineKeyframe::<V>::from(i)? );
+        }
+        let addr = keyframes.as_mut_ptr() as usize;
+        let length = keyframes.len();
+        let capacity = keyframes.capacity();
+        keyframes.leak();
+        let dropper = Box::new( move || {
+            unsafe { Vec::from_raw_parts(addr as *mut V, length, capacity); }
+        });
         Ok( Self {
-            bind_idx,
-            typ,
+            target,
+            typ: V::typ(),
             addr,
             length,
             dropper
         } )
     }
+
     pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
         unsafe {
             if T::typ() == self.typ {
@@ -124,7 +89,6 @@ impl TimelineUntypedTarget {
             } else {
                 Err( TimelineError::TypeNotMatch {request:T::typ(), actual: self.typ})
             }
-
         }
     }
 }

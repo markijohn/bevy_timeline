@@ -6,8 +6,7 @@ use thiserror::Error;
 use std::str::FromStr;
 use bevy_asset::AsyncReadExt;
 use crate::data::{TimelineAnimationSet, TimelineUntypedAnimation, TimelineUntypedResolver};
-
-
+use crate::TimelineImplSets;
 
 #[non_exhaustive]
 #[derive(Debug, Error)]
@@ -23,9 +22,9 @@ pub enum JsonLoaderError {
     UnknownError( Cow<'static,str> )
 }
 
-pub struct TimelineAnimationSetLoader(HashMap<&'static str,TimelineUntypedResolver>);
+pub struct TimelineAnimationSetLoader<K> where K:TimelineImplSets;
 
-impl AssetLoader for TimelineAnimationSetLoader {
+impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets {
     type Asset = TimelineAnimationSet;
     type Settings = ();
     type Error = JsonLoaderError;

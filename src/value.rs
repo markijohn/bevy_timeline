@@ -10,13 +10,13 @@ use bevy_transform::prelude::{Transform};
 
 use serde_json::{json,Value};
 use crate::data::TimelineUntypedAnimation;
-use crate::TimelinePlayer;
+use crate::{TimelineError, TimelinePlayer};
 
 pub trait AnimatableValue:Sized+'static {
     type Target: Component<Mutability=Mutable>;
     fn interpolate(s:f32, start:Self, end:Self, out:&mut Self::Target);
 
-    fn from_value(value:&Value) -> Result<Self, Cow<'static,str>>;
+    fn from_value(value:&Value) -> Result<Self, TimelineError>;
 
     fn to_value(&self) -> Value;
 
@@ -57,7 +57,7 @@ impl <T,A,B> AnimatableValue for (A,B) where T:Component<Mutability=Mutable>, A:
     type Target = T;
 
     fn interpolate(s: f32, start: Self, end: Self, out: &mut Self::Target) {
-        
+
     }
 
     fn from_value(value: &Value) -> Result<Self, Cow<'static, str>> {

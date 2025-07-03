@@ -204,7 +204,7 @@ impl TimelinePlayer {
         
     }
 
-    pub fn get_playing_entities<T>( &self, assets:&Res<Assets<TimelineUntypedAnimation>> ) -> impl Iterator<Item=(Entity,TimelineUntypedTarget)> {
-        
+    pub fn get_playing_entities<T>( &self ) -> impl Iterator<Item=(Entity,Handle<TimelineUntypedTarget>)> {
+        todo!()
     }
 }
