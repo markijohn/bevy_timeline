@@ -10,6 +10,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use crate::{AnimatableValue, Timeline, TimelineError, TimelineImplSets};
 
+
+#[derive(TypePath,Asset)]
+pub struct TimelineAnimationSet(pub(crate) Vec<Handle<TimelineAnimation>>);
+
 #[derive(TypePath,Asset)]
 pub struct TimelineAnimation {
     pub name: String,
@@ -18,12 +22,24 @@ pub struct TimelineAnimation {
 }
 
 impl TimelineAnimation {
-    pub fn load_animation<V:TimelineImplSets>(&self) -> Result<TimelineAnimation, TimelineError> {
-        V::resolve_keyframes()
+    pub fn load_animation<V:TimelineImplSets>(value:&Value) -> Result<TimelineAnimation, TimelineError> {
+        let map = value.as_object().ok_or(TimelineError::IncorrectValueType("animation is not an object"))?;
+        let name = map.get("name").ok_or(TimelineError::IncorrectValueType("name(in animation) is not exist"))?.as_str().ok_or(TimelineError::IncorrectValueType("timeline name must be string"))?.to_string();
+        let duration = map.get("name").ok_or(TimelineError::IncorrectValueType("duration(in animation) is not exist"))?.as_number().ok_or(TimelineError::IncorrectValueType("duration must be number"))?.as_f64().unwrap() as f32;
+        let targets_value = map.get("targets").ok_or(TimelineError::IncorrectValueType("targets(in animation) is not exist"))?.as_array().ok_or(TimelineError::IncorrectValueType("targets must be array"))?;
+        let mut targets = Vec::with_capacity(targets_value.len());
+        for i in targets_value {
+            targets.push( TimelineUntypedTarget::from::<V>( i )? );
+        }
+        Ok(TimelineAnimation { name, duration, targets })
     }
-
-    pub fn load_animations<V>() -> Result<TimelineAnimation, TimelineError> {
-
+    pub fn load_animations<V:TimelineImplSets>(value:&Value) -> Result<Vec<TimelineAnimation>, TimelineError> {
+        let anims_value = value.as_array().ok_or("timeline must be array")?;
+        let mut anims = Vec::with_capacity( anims_value.len() );
+        for i in anims_value {
+            anims.push( Self::load_animation::<V>( i )? );
+        }
+        Ok( anims )
     }
 }
 

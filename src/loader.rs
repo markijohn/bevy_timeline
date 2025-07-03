@@ -1,33 +1,22 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use bevy_asset::io::Reader;
 use bevy_asset::{AssetLoader, LoadContext};
 use thiserror::Error;
 use std::str::FromStr;
 use bevy_asset::AsyncReadExt;
-use crate::data::{TimelineAnimationSet, TimelineUntypedAnimation, TimelineUntypedResolver};
-use crate::TimelineImplSets;
+use crate::data::{TimelineAnimation, TimelineAnimationSet};
+use crate::{TimelineError, TimelineImplSets};
 
-#[non_exhaustive]
-#[derive(Debug, Error)]
-pub enum JsonLoaderError {
-    /// [IO Error](std::io::Error)
-    #[error("JSON data load failed: {0}")]
-    Io(#[from] std::io::Error),
-
-    /// [JSON Error](serde_json::error::Error)
-    #[error("Could not parse the JSON: {0}")]
-    JsonError(#[from] serde_json::error::Error),
-
-    UnknownError( Cow<'static,str> )
+pub struct TimelineAnimationSetLoader<K> where K:TimelineImplSets {
+    inner: PhantomData<K>
 }
 
-pub struct TimelineAnimationSetLoader<K> where K:TimelineImplSets;
-
-impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets {
+impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets + Send + Sync + 'static {
     type Asset = TimelineAnimationSet;
     type Settings = ();
-    type Error = JsonLoaderError;
+    type Error = TimelineError;
 
     async fn load(
         &self,
@@ -38,76 +27,17 @@ impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets 
         let mut string = String::new();
         reader.read_to_string(&mut string).await?;
         let value = serde_json::Value::from_str(&string)?;
-        Ok( crate::data::TimelineAnimationSet::from(&self.0, value)? )
+        let anims = TimelineAnimation::load_animations::<K>( &value )?;
+        let mut anim_sets = Vec::with_capacity(anims.len());
+        anims.into_iter().for_each( |anim| {
+            anim_sets.push(
+                load_context.add_labeled_asset(anim.name.clone(), anim)
+            );
+        });
+        Ok( TimelineAnimationSet(anim_sets) )
     }
 
     fn extensions(&self) -> &[&str] {
         &["json"]
     }
 }
-
-pub struct TimelineAnimationLoader(HashMap<&'static str,TimelineUntypedResolver>);
-
-impl AssetLoader for TimelineAnimationSetLoader {
-    type Asset = TimelineUntypedAnimation;
-    type Settings = ();
-    type Error = JsonLoaderError;
-
-    async fn load(
-        &self,
-        reader: &mut dyn Reader,
-        _settings: &(),
-        load_context: &mut LoadContext<'_>,
-    ) -> Result<Self::Asset, Self::Error> {
-        let mut string = String::new();
-        reader.read_to_string(&mut string).await?;
-        let value = serde_json::Value::from_str(&string)?;
-        Ok( TimelineRawData(value) )
-    }
-
-    fn extensions(&self) -> &[&str] {
-        &["json"]
-    }
-}
-// use bevy_asset::io::Reader;
-// use bevy_asset::{AssetLoader, LoadContext};
-// use thiserror::Error;
-// use crate::TimelineRawData;
-// use std::str::FromStr;
-// use bevy_asset::AsyncReadExt;
-//
-// pub struct TimelineRawDataLoader;
-//
-// #[non_exhaustive]
-// #[derive(Debug, Error)]
-// pub enum JsonLoaderError {
-//     /// [IO Error](std::io::Error)
-//     #[error("JSON data load failed: {0}")]
-//     Io(#[from] std::io::Error),
-//     /// [JSON Error](serde_json::error::Error)
-//     #[error("Could not parse the JSON: {0}")]
-//     JsonError(#[from] serde_json::error::Error),
-// }
-//
-// impl AssetLoader for TimelineRawDataLoader {
-//     type Asset = TimelineRawData;
-//     type Settings = ();
-//     type Error = JsonLoaderError;
-//
-//     async fn load(
-//         &self,
-//         reader: &mut dyn Reader,
-//         _settings: &(),
-//         load_context: &mut LoadContext<'_>,
-//     ) -> Result<Self::Asset, Self::Error> {
-//         load_context.
-//         let mut string = String::new();
-//         reader.read_to_string(&mut string).await?;
-//         let value = serde_json::Value::from_str(&string)?;
-//         Ok( TimelineRawData(value) )
-//     }
-//
-//     fn extensions(&self) -> &[&str] {
-//         &["json"]
-//     }
-// }

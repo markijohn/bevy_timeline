@@ -44,8 +44,8 @@ use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
-use crate::data::{TimelineUntypedAnimation, TimelineUntypedResolver, TimelineUntypedTarget};
-use crate::timeline::Keyframe;
+use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedTarget};
+use crate::loader::TimelineAnimationSetLoader;
 
 pub type DefaultTransformSet = (Scale, Rotation, Translation);
 
@@ -83,38 +83,15 @@ pub enum AnimationSystemSet {
 #[derive(Default)]
 pub struct TimelinePlugin<B:TimelineImplSets> {
     inner: PhantomData<B>,
-    // resolver: HashMap<&'static str,TimelineUntypedResolver>,
-    // registers: HashMap< TypeId, Box<dyn Fn(&mut App) + 'static> >,
 }
 
-// impl Default for TimelinePlugin<B:TimelineImplSets>  {
-//     fn default() -> Self {
-//         let plugin = Self::empty();
-//         plugin.register_type::<(Scale, Rotation, Translation)>(  );
-//         plugin
-//     }
-// }
-// impl TimelinePlugin {
-//     pub fn empty() -> Self {
-//         TimelinePlugin {
-//             resolver: Default::default(),
-//             registers: Default::default(),
-//         }
-//     }
-//     pub fn register_type<A:AnimatableSet>( mut self ) {
-//         for resolver in A::create_resolvers() {
-//             self.resolver.insert( resolver.typ(), resolver );
-//         }
-//         self
-//     }
-// }
 
-impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets {
+impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets + Send + Sync + 'static {
     fn build(&self, app: &mut App) {
         app
-            .init_asset::<TimelineUntypedAnimation>()
-            .init_asset::<TimelineUntypedTarget>()
-            .register_asset_loader(TimelineRawDataLoader);
+            .init_asset::<TimelineAnimationSet>()
+            .init_asset::<TimelineAnimation>()
+            .register_asset_loader( TimelineAnimationSetLoader::<B> );
         app.configure_sets(
             PostUpdate,
             (
@@ -180,7 +157,7 @@ fn bind_target_entities(
 
 fn load_player(
     mut cmds:Commands,
-    timeline_data_assets: Res<Assets<TimelineUntypedAnimation>>,
+    timeline_data_assets: Res<Assets<TimelineAnimation>>,
     mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), Added<TimelinePlayer> >,
     has_childs:Query<(Entity,&Name,&Children)>,
     last_level_childs:Query<(Entity,&Name), Without<Children>>,
@@ -355,7 +332,7 @@ fn prepare_animation<K:AnimatableValue>(
 
 
 pub trait TimelineImplSets {
-    fn build(app:&mut App);
+    fn add_systems(app:&mut App);
     
     fn try_resolve_target(typ:&'static str, keyframes:&[Value]);
 }
@@ -372,8 +349,13 @@ macro_rules! impl_timeline_impl_sets {
                 )+
             }
             
-            fn try_resolve_target(typ:&'static str, keyframes:&[Value]) {
-                todo!()
+            fn try_resolve_target(typ:&'static str, keyframes:&[Value]) -> Option<Result<TimelineUntypedTarget,TimelineError>>;
+                $(
+                let result = <$tuple as AnimatableSet>::try_resolve_target( typ, value );
+                if result.is_some() {
+                    return result;
+                }
+                )+
             }
         }
     };
