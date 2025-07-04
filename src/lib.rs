@@ -44,7 +44,7 @@ use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
-use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedTarget};
+use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes, TimelineUntypedTarget};
 use crate::loader::TimelineAnimationSetLoader;
 
 pub type DefaultTransformSet = (Scale, Rotation, Translation);
@@ -65,6 +65,9 @@ pub enum TimelineError {
 
     #[error("TimelineTarget cast failed(type not match) : {0} -> {1}")]
     TypeNotMatch{ request:&'static str, actual:&'static str },
+
+    #[error("Unknown TimelineTarget type : {}")]
+    UnknownTargetType(String),
 
     #[error("Unknown Timeline error : {0}")]
     UnknownError( Cow<'static,str> )
@@ -91,7 +94,7 @@ impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets + Send + Sync + '
         app
             .init_asset::<TimelineAnimationSet>()
             .init_asset::<TimelineAnimation>()
-            .register_asset_loader( TimelineAnimationSetLoader::<B> );
+            .register_asset_loader( TimelineAnimationSetLoader );
         app.configure_sets(
             PostUpdate,
             (
@@ -99,9 +102,9 @@ impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets + Send + Sync + '
                 AnimationSystemSet::Animate,
             ).chain()
         );
+        B::add_systems( app );
         app
-            .add_systems(PostUpdate, bind_target_entities.in_set(AnimationSystemSet::PreparePlayer))
-        B::build( app );
+            .add_systems(PostUpdate, bind_target_entities.in_set(AnimationSystemSet::PreparePlayer));
         ;
     }
 }
@@ -229,24 +232,6 @@ fn load_player(
 }
 
 
-fn send_anim_event<K>(
-    players: Query<&mut TimelinePlayer>,
-    step_writer: EventWriter<TimelineStepEvent<K>>,
-) where K:AnimatableValue+Send+Sync+TypePath {
-
-}
-
-fn resolve_keyframes<K>(
-    timeilne_assets: Res<Assets<TimelineRawData>>,
-    resolve_assets: ResMut<Assets<Timeline<K>>>,
-    mut players: Query<&mut TimelinePlayer, Added<TimelinePlayer>>,
-    target_query: Query<&mut K::Target, With<Name>>,
-) where K:AnimatableValue+Send+Sync+TypePath {
-    //find exist resolved animation
-
-}
-
-
 fn animate_step<K>(
     mut cmds: Commands,
     anim_cache: Res<TimelineResolvedCache<K>>,
@@ -305,36 +290,12 @@ fn prepare_animation<K:AnimatableValue>(
 
     }
 }
-// 
-// 
-// pub struct TimelineImplPlugin<K> where K:AnimatableValue + 'static {
-//     inner : PhantomData<K>,
-// }
-// 
-// impl <K> Default for TimelineImplPlugin<K> where K:AnimatableValue + 'static {
-//     fn default() -> Self {
-//         Self { inner : PhantomData }
-//     }
-// }
-// 
-// impl <K> Plugin for TimelineImplPlugin<K> where K:AnimatableValue + Send + Sync + TypePath + 'static {
-// 
-//     fn build(&self, app: &mut App) {
-//         app
-//             .insert_resouce(TimelineResolvedCache::<K>::default())
-//             .add_event::<TimelineStepEvent<K>>()
-//             .add_systems(PostUpdate, resolve_type::<K>.in_set(AnimationSystemSet::ResolveType))
-//             .add_systems(PostUpdate, send_anim_event::<K>.in_set(AnimationSystemSet::EventSender))
-//             .add_systems(PostUpdate, consume_step_event::<K>.in_set(AnimationSystemSet::TypedEventReceiver) );
-//         ;
-//     }
-// }
 
 
 pub trait TimelineImplSets {
     fn add_systems(app:&mut App);
     
-    fn try_resolve_target(typ:&'static str, keyframes:&[Value]);
+    fn try_resolve_keyframes(typ:&'static str, keyframes:&[Value]);
 }
 
 
@@ -349,13 +310,14 @@ macro_rules! impl_timeline_impl_sets {
                 )+
             }
             
-            fn try_resolve_target(typ:&'static str, keyframes:&[Value]) -> Option<Result<TimelineUntypedTarget,TimelineError>>;
+            fn try_resolve_keyframes(typ:&'static str, keyframes:&[Value]) -> Option<Result<TimelineKeyframe,TimelineError>> {
                 $(
-                let result = <$tuple as AnimatableSet>::try_resolve_target( typ, value );
+                let result = <$tuple as AnimatableSet>::try_resolve_keyframes( typ, value );
                 if result.is_some() {
                     return result;
                 }
                 )+
+                None
             }
         }
     };
@@ -385,12 +347,12 @@ pub trait AnimatableSet {
     }
 
     fn step(
-        assets: Res<Assets<TimelineUntypedAnimation>>,
+        assets: Res<Assets<TimelineAnimation>>,
         players: Query<&TimelinePlayer>,
         target_db: Query<&mut Self::Target>,
     );
 
-    fn try_resolve_target(typ:&'static str, value:&Value) -> Option<Result<TimelineUntypedTarget,TimelineError>>;
+    fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>>;
 }
 
 impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
@@ -414,9 +376,9 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
         }
     }
 
-    fn try_resolve_target(typ:&'static str, value:&[Value]) -> Option<Result<TimelineUntypedTarget,TimelineError>> {
+    fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
         if typ == V::typ() {
-            Some( TimelineUntypedTarget::from::<V>(value) )
+            Some( V::to_untyped_keyframes( value ) )
         } else {
             None
         }
@@ -429,14 +391,16 @@ macro_rules! impl_animatable_set {
         where
             $($T: Animatable,)+
         {
+            type Target = $T::Target;
+
             fn build(app:&mut bevy_app::App) {
                 app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
             }
 
-            fn try_resolve_target(typ:&'static str, binded_idx:usize, value:&[Value]) -> Option<Result<TimelineUntypedTarget,TimelineError>> {
+            fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
                 match typ {
                     $(
-                    $T::typ() =>
+                    $T::typ() => return Some( $T::to_untyped_keyframes( value ) )
                     )+
                 }
                 None

@@ -10,14 +10,39 @@ use bevy_transform::prelude::{Transform};
 
 use serde_json::{json,Value};
 use crate::{TimelineError, TimelinePlayer};
+use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
 
 pub trait AnimatableValue:Sized+'static {
     type Target: Component<Mutability=Mutable>;
-    fn interpolate(s:f32, start:Self, end:Self, out:&mut Self::Target);
+    fn interpolate(s:f32, start:Self, end:Option<Self>, out:&mut Self::Target);
 
     fn from_value(value:&Value) -> Result<Self, TimelineError>;
 
     fn to_value(&self) -> Value;
+
+    fn to_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
+        // let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
+        // let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
+        // let data = Self::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
+
+        let mut keyframes = Vec::<TimelineKeyframe<Self>>::with_capacity( value.len() );
+        for i in value {
+            keyframes.push( TimelineKeyframe::<Self>::from(i)? );
+        }
+        let addr = keyframes.as_mut_ptr() as usize;
+        let length = keyframes.len();
+        let capacity = keyframes.capacity();
+        keyframes.leak();
+        let dropper = Box::new( move || {
+            unsafe { Vec::from_raw_parts(addr as *mut Self, length, capacity); }
+        });
+        Ok( TimelineUntypedKeyframes {
+            typ: Self::typ(),
+            addr,
+            length,
+            dropper
+        })
+    }
 
     fn typ() -> &'static str {
         std::any::type_name::<Self>()
@@ -30,8 +55,12 @@ pub struct Scale(Vec3);
 impl AnimatableValue for Scale {
     type Target = Transform;
 
-    fn interpolate(s: f32, start:Self, end: Self, out: &mut Self::Target) {
-        out.scale = (end.0 - start.0) * s;
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        if let Some(end) = end {
+            out.scale = (end.0 - start.0) * s;
+        } else {
+            out.scale = start.0
+        }
     }
 
     fn from_value(value: &Value) -> Result<Self, TimelineError> {
@@ -74,8 +103,12 @@ pub struct Rotation(Quat);
 impl AnimatableValue for Rotation {
     type Target = Transform;
 
-    fn interpolate(s: f32, prev:Self, next: Self, out: &mut Self::Target) {
-        out.rotation = prev.0.slerp( next.0, s );
+    fn interpolate(s: f32, prev:Self, next: Option<Self>, out: &mut Self::Target) {
+        if let Some(next) = next {
+            out.rotation = prev.0.slerp( next.0, s );
+        } else {
+            out.rotation = prev.0;
+        }
     }
 
     fn from_value(value: &Value) -> Result<Self, TimelineError> {
@@ -105,8 +138,12 @@ pub struct Translation(Vec3);
 impl AnimatableValue for Translation {
     type Target = Transform;
 
-    fn interpolate(s: f32, start:Self, end: Self, out: &mut Self::Target) {
-        out.translation = (end.0 - start.0) * s;
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        if let Some(end) = end {
+            out.translation = (end.0 - start.0) * s;
+        } else {
+            out.translation = start.0;
+        }
     }
 
     fn from_value(value: &Value) -> Result<Self, TimelineError> {

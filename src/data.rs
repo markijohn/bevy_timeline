@@ -33,6 +33,7 @@ impl TimelineAnimation {
         }
         Ok(TimelineAnimation { name, duration, targets })
     }
+
     pub fn load_animations<V:TimelineImplSets>(value:&Value) -> Result<Vec<TimelineAnimation>, TimelineError> {
         let anims_value = value.as_array().ok_or("timeline must be array")?;
         let mut anims = Vec::with_capacity( anims_value.len() );
@@ -57,50 +58,17 @@ impl <T> TimelineKeyframe<T> where T:AnimatableValue {
     }
 }
 
-#[derive(TypePath,Asset)]
-pub struct TimelineUntypedTarget {
-    pub typ: &'static str,
-    target: Vec<String>,
-    addr: usize,
-    length: usize,
-    dropper : Box<dyn Fn() + Send + Sync + 'static>,
+pub struct TimelineUntypedKeyframes {
+    pub typ:&'static str,
+    pub(crate) addr: usize,
+    pub(crate) length: usize,
+    pub(crate) dropper : Box<dyn Fn() + Send + Sync + 'static>,
 }
 
-
-impl TimelineUntypedTarget {
-    pub fn from<V:AnimatableValue>(value:&Value) -> Result<Self, TimelineError> {
-        let map = value.as_object().ok_or( TimelineError::IncorrectValueType("target must be object") )?;
-        let target_value = map.get("target").ok_or(TimelineError::IncorrectValueType("target not exist"))?
-            .as_array().ok_or(TimelineError::IncorrectValueType("target must be string array"))?;
-        let mut target = Vec::with_capacity(target_value.len());
-        for i in target_value {
-            target.push( value.as_str().ok_or(TimelineError::IncorrectValueType("target must be string"))?.to_string() );
-        }
-        let value = map.get("keyframes").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
-            .as_array().ok_or(TimelineError::IncorrectValueType("keyframes is not array"))?;
-        let mut keyframes = Vec::<TimelineKeyframe<V>>::with_capacity( value.len() );
-        for i in value {
-            keyframes.push( TimelineKeyframe::<V>::from(i)? );
-        }
-        let addr = keyframes.as_mut_ptr() as usize;
-        let length = keyframes.len();
-        let capacity = keyframes.capacity();
-        keyframes.leak();
-        let dropper = Box::new( move || {
-            unsafe { Vec::from_raw_parts(addr as *mut V, length, capacity); }
-        });
-        Ok( Self {
-            target,
-            typ: V::typ(),
-            addr,
-            length,
-            dropper
-        } )
-    }
-
-    pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
+impl TimelineUntypedKeyframes {
+    fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
         unsafe {
-            if T::typ() == self.typ {
+            if T::typ() == self.typ() {
                 Ok( std::slice::from_raw_parts(self.addr as *const TimelineKeyframe<T>, self.length) )
             } else {
                 Err( TimelineError::TypeNotMatch {request:T::typ(), actual: self.typ})
@@ -109,10 +77,50 @@ impl TimelineUntypedTarget {
     }
 }
 
-impl Drop for TimelineUntypedTarget {
+impl Drop for TimelineUntypedKeyframes {
     fn drop(&mut self) {
         unsafe {
             (self.dropper) ();
         }
+    }
+}
+
+#[derive(TypePath,Asset)]
+pub struct TimelineUntypedTarget {
+    target: Vec<String>,
+    keyframes: TimelineUntypedKeyframes,
+}
+
+
+impl TimelineUntypedTarget {
+    pub fn typ(&self) -> &'static str {
+        self.keyframes.typ
+    }
+
+    pub fn from<V:TimelineImplSets>(value:&Value) -> Result<Self, TimelineError> {
+        let map = value.as_object().ok_or( TimelineError::IncorrectValueType("target must be object") )?;
+        let typ = map.get("typ").ok_or(TimelineError::IncorrectValueType("typ not exist"))?
+            .as_str().ok_or(TimelineError::IncorrectValueType("typ must be string"))?;
+        let target_value = map.get("target").ok_or(TimelineError::IncorrectValueType("target not exist"))?
+            .as_array().ok_or(TimelineError::IncorrectValueType("target must be string array"))?;
+        let mut target = Vec::with_capacity(target_value.len());
+        for i in target_value {
+            target.push( value.as_str().ok_or(TimelineError::IncorrectValueType("target must be string"))?.to_string() );
+        }
+        let value = map.get("keyframes").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
+            .as_array().ok_or(TimelineError::IncorrectValueType("keyframes is not array"))?;
+        let keyframes = if let Some(result) = V::try_resolve_keyframes( typ, value.as_slice() ) {
+            result?
+        } else {
+            return Err(TimelineError::UnknownTargetType(typ.to_string()))
+        };
+        Ok( Self {
+            target,
+            keyframes,
+        } )
+    }
+
+    pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
+        self.keyframes.get_typed::<T>()
     }
 }
