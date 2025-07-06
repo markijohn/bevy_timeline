@@ -44,7 +44,7 @@ impl TimelineAnimation {
     }
 }
 
-pub struct TimelineKeyframe<T> {
+pub struct TimelineKeyframe<T> where T:AnimatableValue{
     pub time:f32,
     pub data:T
 }

@@ -1,5 +1,6 @@
 use std::any::TypeId;
 use std::borrow::Cow;
+use bevy_ecs::change_detection::Mut;
 use bevy_ecs::component::{ComponentMutability, Mutable};
 use bevy_ecs::entity::Entity;
 use bevy_reflect::TypePath;
@@ -11,23 +12,67 @@ use bevy_transform::prelude::{Transform};
 use serde_json::{json,Value};
 use crate::{TimelineError, TimelinePlayer};
 use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
+use crate::player::TimelinePlayback;
 
 pub trait AnimatableValue:Sized+'static {
     type Target: Component<Mutability=Mutable>;
+    
+    /// TODO : fast keyframe search from cached(last searched index, last proceed time) 
+    fn interpolate_from_keyframe(time:f32, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) {
+        if keyframes.is_empty() {
+            return;
+        }
+        
+        let (before,next) = match keyframes.binary_search_by(|probe| probe.time.partial_cmp(&time).unwrap()) {
+            Ok(i) => {
+                let before = if i > 0 {
+                    Some(i - 1) 
+                } else { None };
+                let next = Some(i);
+                (before, next)
+            }
+            Err(i) => {
+                let before = if i > 0 { Some(i - 1) } else { None };
+                let next = if i < keyframes.len() { Some(i) } else { None };
+                (before, next)
+            }
+        };
+        let (bef,next) = (before.map(|idx| &keyframes[idx]), next.map(|idx| &keyframes[idx]));
+
+        match (bef, next) {
+            (Some(bef), None) => {
+                // TODO : If there is no next keyframe to process and the previous keyframe processed is 
+                // the same as the start keyframe, no processing is required, i.e., no Mut value is substituted, which prevents bevy from being marked Changed.
+                //end of keyframe
+            }
+            (None, Some(next)) => {
+                //no start keyframe
+            }
+            (Some(bef), Some(next)) => {
+                let time_diff = next.time - bef.time;
+                let s = (time - bef.time) / time_diff;
+                bef.interpolate(s, next, out.as_mut());
+            }
+            (None, None) => {
+                //No frames
+            }
+        }
+    }
+    
     fn interpolate(s:f32, start:Self, end:Option<Self>, out:&mut Self::Target);
 
     fn from_value(value:&Value) -> Result<Self, TimelineError>;
 
     fn to_value(&self) -> Value;
 
-    fn to_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
+    fn craete_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
         // let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
         // let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
         // let data = Self::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
 
         let mut keyframes = Vec::<TimelineKeyframe<Self>>::with_capacity( value.len() );
         for i in value {
-            keyframes.push( TimelineKeyframe::<Self>::from(i)? );
+            keyframes.push( TimelineKeyframe::from::<Self>(i)? );
         }
         let addr = keyframes.as_mut_ptr() as usize;
         let length = keyframes.len();

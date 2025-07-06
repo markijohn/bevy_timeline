@@ -295,7 +295,7 @@ fn prepare_animation<K:AnimatableValue>(
 pub trait TimelineImplSets {
     fn add_systems(app:&mut App);
     
-    fn try_resolve_keyframes(typ:&'static str, keyframes:&[Value]);
+    fn try_resolve_keyframes(typ:&str, keyframes:&[Value]);
 }
 
 
@@ -310,9 +310,9 @@ macro_rules! impl_timeline_impl_sets {
                 )+
             }
             
-            fn try_resolve_keyframes(typ:&'static str, keyframes:&[Value]) -> Option<Result<TimelineKeyframe,TimelineError>> {
+            fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
                 $(
-                let result = <$tuple as AnimatableSet>::try_resolve_keyframes( typ, value );
+                let result = <$tuple as AnimatableSet>::try_resolve_keyframes( typ, keyframes );
                 if result.is_some() {
                     return result;
                 }
@@ -359,7 +359,7 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
     type Target = V::Target;
 
     fn step(
-        assets: Res<Assets<TimelineUntypedTarget>>,
+        assets: Res<Assets<TimelineAnimation>>,
         players: Query<&TimelinePlayer>,
         mut target_db: Query<&mut Self::Target>,
     ) {
@@ -386,31 +386,30 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
 }
 
 macro_rules! impl_animatable_set {
-    ( $($T:ident),+ ) => {
-        impl<$($T),+> AnimatableSet for ($($T,)+)
+    ( $F:ident, $($T:ident),+ ) => {
+        impl<$F, $($T),+> AnimatableSet for ($F, $($T,)+)
         where
-            $($T: Animatable,)+
+            $F:AnimatableValue, $($T: AnimatableValue,)+
         {
-            type Target = $T::Target;
-
-            fn build(app:&mut bevy_app::App) {
-                app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
-            }
+            type Target = $F::Target;
 
             fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
-                match typ {
-                    $(
-                    $T::typ() => return Some( $T::to_untyped_keyframes( value ) )
-                    )+
+                if $F::typ() == typ {
+                    return $F::try_resolve_keyframes( typ, value )
                 }
+                $(
+                if $T::typ() == typ {
+                    return $F::try_resolve_keyframes( typ, value )
+                }
+                )+
                 None
             }
         }
     };
 }
 
-impl_animatable_set!(T1);
-impl_animatable_set!(T1, T2);
+// impl_animatable_set!(T1);
+// impl_animatable_set!(T1, T2);
 impl_animatable_set!(T1, T2, T3);
 impl_animatable_set!(T1, T2, T3, T4);
 impl_animatable_set!(T1, T2, T3, T4, T5);

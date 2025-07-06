@@ -1,86 +1,117 @@
 use std::collections::HashMap;
 use bevy_asset::prelude::*;
 use bevy_ecs::prelude::*;
-use fxhash::FxHashMap;
-use crate::timeline::Timeline;
-use crate::{TimelineAnimId, TimelineId, TimelineRawData};
-use crate::data::{TimelineUntypedAnimation, TimelineUntypedTarget};
+use crate::AnimatableValue;
+use crate::data::{TimelineAnimation};
+
+
+#[derive(Clone,Default)]
+pub enum TimelinePlayback {
+    #[default]
+    Forward,        // Play forward from current position until animation duration
+    ForwardLoop,    // Play forward continuously until stopped
+    Backward,       // Play backward from current position until animation duration
+    BackwardLoop,   // Play backward continuously until stopped
+    StepByRate(f32), // Advance by specified rate (next state will be Stop)
+    StepByTime(f32), // Advance by specified time (next state will be Stop)
+    Pause(Box<TimelinePlayback>),          // Pause playback at current position (can be resumed)
+    Stop            // Stop playback and reset to initial state
+}
 
 #[derive(Default)]
-pub enum TimelinePlayMode {
-    /// Run with default duration
+pub enum TimelineDuration {
+    /// Play with the original animation duration
     #[default]
-    ExactMatch,
-    
-    /// Runs in the given time and if it is less than the animation time, it will be cut off at that time or extended at the end if it
-    CropOrExtendEnd(f32),
-    
-    /// If it runs in the given time and is less than the animation time, the difference is set to the start time of the playback, and if longer, it is extended from the beginning
-    CropOrExtendStart(f32),
-    
-    /// It runs in a given amount of time and is incremented or decremented, i.e. `1.0` will play at the default playback speed and if you set it to `0.5` it will play twice as fast.
-    Stretch(f32)
+    Original,
+
+    /// Play within the specified time duration. If shorter than animation, 
+    /// animation will be cut off. If longer, animation will be extended at the end.
+    CropOrExtendAtEnd(f32),
+
+    /// Play within the specified time duration. If shorter than animation,
+    /// the difference is added to the start delay. If longer, animation is extended at the beginning.
+    CropOrExtendAtStart(f32),
+
+    /// Play with time scaling. 1.0 = normal speed, 0.5 = double speed, 2.0 = half speed
+    TimeScale(f32)
 }
 
-pub enum TimelineCursor {
-    /// Relative start time
-    Rate(f32), // step = duration * rate
-    
-    /// Absolute start time
-    Time(f32), // step = $param / duration
+pub enum TimelinePosition {
+    /// Relative position (0.0 = start, 1.0 = end)
+    Normalized(f32), // position = duration * normalized_value
+
+    /// Absolute time position in seconds
+    Absolute(f32), // position = absolute_time
 }
 
-impl Default for TimelineCursor {
+impl Default for TimelinePosition {
     fn default() -> Self {
-        Self::Time(0.0)
+        Self::Absolute(0.0)
     }
 }
 
+pub struct TimelineTargetBinded {
+    pub typ:&'static str,
+    pub entity: Entity,
+    pub target_idx: usize
+}
+
 pub struct TimelineSession {
-    is_loop : bool,
     is_loop_interpolation : bool,
-    is_playing : bool,
     duration : f32,
     progress : f32,
-    speed : f32,
-    play_mode : TimelinePlayMode,
-    anim_handle: Handle<TimelineUntypedAnimation>,
-    binded_targets: Vec<Option<(Entity,TimelineId)>>,
-    binded_targets_idxs: HashMap<&'static str, Vec<usize>>,
+    playback : TimelinePlayback,
+    play_duration: TimelineDuration,
+    anim_handle: Handle<TimelineAnimation>,
+    binded_targets: Vec<TimelineTargetBinded>,
 }
 
 impl TimelineSession {
     /// binded child (entity,timeline)
-    pub fn binded_targets(&self) -> &[Option<(Entity,TimelineId)>] {
+    pub fn binded_targets(&self) -> &[TimelineTargetBinded] {
         self.binded_targets.as_slice()
     }
 
     /// The `play` function always starts at time `0` (but can depend on the start of `TimelinePlayOption`)
     pub fn play(&mut self, option:TimelinePlayOption) {
         self.progress = 0.;
-        if let Some(start) = option.start {
+        if let Some(start) = option.position {
             match start {
-                TimelineCursor::Rate(r) => { self.progress = self.duration * r }
-                TimelineCursor::Time(t) => { self.progress = t }
+                TimelinePosition::Normalized(r) => { self.progress = self.duration * r }
+                TimelinePosition::Absolute(t) => { self.progress = t }
             }
         }
-        if let Some(is_loop) = option.is_loop {
-            self.is_loop = is_loop;
-        }
-        if let Some(play_mode) = option.play_mode {
-            self.play_mode = play_mode;
-        }
-        self.resume();
+        self.playback = option.playback.unwrap_or_default()
     }
 
     /// Resume from the point where `stop` was called
     pub fn resume(&mut self) {
-        self.is_playing = true;
+        if let TimelinePlayback::Pause(old_playback) = &self.playback {
+            self.playback = (*(old_playback.clone())).into();
+        }
     }
 
     /// Pauses the animation playing in the current session
     pub fn stop(&mut self) {
-        self.is_playing = false;
+        self.playback = TimelinePlayback::Stop;
+    }
+    
+    pub fn pause(&mut self) {
+        if let TimelinePlayback::Pause(_) = &self.playback {
+            return;
+        }
+        self.playback = TimelinePlayback::Pause(Box::new(self.playback.clone()));
+    }
+
+    pub fn is_playing(&self) -> bool {
+        match self.playback {
+            TimelinePlayback::Pause(_) | TimelinePlayback::Stop => false,
+            _ => false
+        }
+    }
+
+    pub fn status(&self) -> TimelinePlayback {
+        self.playback.clone()
     }
     
     /// Accumulate playback time
@@ -91,27 +122,27 @@ impl TimelineSession {
 
 #[derive(Default)]
 pub struct TimelinePlayOption {
-    start: Option<TimelineCursor>,
-    is_loop: Option<bool>,
-    play_mode: Option<TimelinePlayMode>,
+    position: Option<TimelinePosition>,
+    playback: Option<TimelinePlayback>,
+    duration: Option<TimelineDuration>,
 }
 
 impl TimelinePlayOption {
     /// Set the playback start time
-    pub fn start_at(mut self, start:TimelineCursor) -> Self{
-        self.start = Some(start);
+    pub fn set_position(mut self, start:TimelinePosition) -> Self{
+        self.position = Some(start);
         self
     }
     
     /// Set loop mode
-    pub fn set_loop(mut self, is_loop:bool) -> Self{
-        self.is_loop = Some(is_loop);
+    pub fn set_playback(mut self, playback:TimelinePlayback) -> Self{
+        self.playback = Some(playback);
         self
     }
     
     /// Set play mode
-    pub fn set_play_mode(mut self, play_mode:TimelinePlayMode) -> Self{
-        self.play_mode = Some(play_mode);
+    pub fn set_duration(mut self, duration:TimelineDuration) -> Self{
+        self.duration = Some(duration);
         self
     }
 }
@@ -129,16 +160,14 @@ impl TimelinePlayer {
         Default::default()
     }
 
-    pub fn create_session(&mut self, timeline_anim_id:&TimelineUntypedAnimation, binded_targets:Vec<Option<(Entity,TimelineId)>>) {
+    pub fn create_session(&mut self, anim_handle:Handle<TimelineAnimation>, binded_targets:Vec<TimelineTargetBinded>) {
         self.sessions.push(TimelineSession {
-            is_loop: false,
             is_loop_interpolation: true,
-            is_playing: false,
             duration: 0.0,
             progress: 0.0,
-            speed: 1.0,
-            play_mode: Default::default(),
-            timeline_anim_id,
+            playback: TimelinePlayback::Stop,
+            play_duration: TimelineDuration::Original,
+            anim_handle,
             binded_targets,
         });
     }
@@ -152,59 +181,53 @@ impl TimelinePlayer {
     }
     
     /// Plays the animation with the given name and returns its state before playing.
-    /// Returns `None` if the target animation does not exist
-    pub fn play(&mut self, name:&str, option:Option<TimelinePlayOption>) -> Option<bool> {
+    pub fn play(&mut self, name:&str, option:Option<TimelinePlayOption>) {
         if let Some( session_idx) = self.shortcut.get( name ) {
             let session = &mut self.sessions[ *session_idx ];
-            let is_playing = session.is_playing;
             session.play( option.unwrap_or_default() );
-            Some(is_playing)
-        } else {
-            None
         }
     }
 
     /// Stops the animation with the given name and returns its state before playing.
-    /// Returns `None` if the target animation does not exist
-    pub fn stop(&mut self, name:&str) -> Option<bool> {
-        if let Some(session) = self.sessions.get_mut(name) {
-            let is_playing = session.is_playing;
+    pub fn stop(&mut self, name:&str) {
+        if let Some(idx) = self.shortcut.get_mut(name) {
+            let session = &mut self.sessions[*idx];
             session.stop();
-            Some(is_playing)
-        } else {
-            None
-        }
-    }
-    
-    pub fn is_playing(&self, name:&str) -> bool {
-        if let Some(session) = self.sessions.get(name) {
-            session.is_playing
-        } else {
-            false
         }
     }
 
-    pub fn is_something_playing(&self) -> bool {
-        for session in self.sessions {
-            if session.is_playing {
-                return true
-            }
-        }
-        false
+    pub fn playing_state(&self) -> impl Iterator<Item=(&str, TimelinePlayback)> {
+        self.shortcut.iter().map(|(name,idx)| (name.as_str(), self.sessions[*idx].playback.clone()))
     }
 
     pub fn stop_all(&mut self) {
-        self.sessions.values_mut().for_each( |e| {
+        self.sessions.iter_mut().for_each( |e| {
             e.stop();
         })
     }
     
-    /// Replay any internal non-zero accumulated playback time.
-    pub fn resume_all(&mut self) {
-        
+    pub fn pause(&mut self, name:&str) {
+        if let Some(idx) = self.shortcut.get_mut(name) {
+            let session = &mut self.sessions[*idx];
+            session.stop();
+        }
     }
 
-    pub fn get_playing_entities<T>( &self ) -> impl Iterator<Item=(Entity,Handle<TimelineUntypedTarget>)> {
-        todo!()
+    pub fn resume(&mut self, name:&str) {
+        if let Some(idx) = self.shortcut.get_mut(name) {
+            self.sessions[*idx].resume();
+        }
+    }
+
+    pub fn resume_all(&mut self) {
+        self.sessions.iter_mut().for_each( |e| e.resume() );
+    }
+
+    pub fn get_playing_entities<T:AnimatableValue>( &self ) -> impl Iterator<Item=&TimelineTargetBinded> {
+        self.sessions.iter()
+            .filter(|v| v.is_playing())
+            .map(|v| v.binded_targets.iter() )
+            .flatten()
+            .filter( |v| v.typ == T::typ() )
     }
 }
