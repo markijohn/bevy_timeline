@@ -9,7 +9,7 @@ use bevy_asset::AsyncReadExt;
 use crate::data::{TimelineAnimation, TimelineAnimationSet};
 use crate::{TimelineError, TimelineImplSets};
 
-pub struct TimelineAnimationSetLoader<K> where K:TimelineImplSets {
+pub struct TimelineAnimationSetLoader<K> {
     inner: PhantomData<K>
 }
 

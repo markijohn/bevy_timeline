@@ -17,10 +17,15 @@ use crate::player::TimelinePlayback;
 pub trait AnimatableValue:Sized+'static {
     type Target: Component<Mutability=Mutable>;
     
-    /// TODO : fast keyframe search from cached(last searched index, last proceed time) 
-    fn interpolate_from_keyframe(time:f32, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) {
+    /// TODO : fast keyframe search from cached(last searched index, last proceed time)
+    /// `play_time` : progress play time
+    /// `pre_idx` : proceed keyframe index
+    /// `keyframes` : all keyframes
+    /// `out` : output
+    /// return : Some(usize) : changed key frame index, None : keyframe not changed
+    fn interpolate_from_keyframe(play_time:f32, prev_idx:Option<usize>, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) -> Option<usize> {
         if keyframes.is_empty() {
-            return;
+            return None;
         }
         
         let (before,next) = match keyframes.binary_search_by(|probe| probe.time.partial_cmp(&time).unwrap()) {
