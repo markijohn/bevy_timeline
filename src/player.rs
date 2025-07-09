@@ -33,7 +33,7 @@ pub enum TimelineDuration {
     CropOrExtendAtStart(f32),
 
     /// Play with time scaling. 1.0 = normal speed, 0.5 = double speed, 2.0 = half speed
-    TimeScale(f32)
+    TimeScale(f32),
 }
 
 pub enum TimelinePosition {
@@ -50,6 +50,12 @@ impl Default for TimelinePosition {
     }
 }
 
+pub struct TimelineProgress {
+    pub duration:f32,
+    pub prev_time:f32,
+    pub curr_time:f32
+}
+
 pub struct TimelineTargetBinded {
     pub typ:&'static str,
     pub entity: Entity,
@@ -57,12 +63,13 @@ pub struct TimelineTargetBinded {
 }
 
 pub struct TimelineSession {
-    is_loop_interpolation : bool,
-    duration : f32,
-    progress : f32,
-    playback : TimelinePlayback,
-    play_duration: TimelineDuration,
-    anim_handle: Handle<TimelineAnimation>,
+    pub is_loop_interpolation : bool,
+    pub duration : f32,
+    pub prev_progress: f32,
+    pub progress : f32,
+    pub playback : TimelinePlayback,
+    pub play_duration: TimelineDuration,
+    pub anim_handle: Handle<TimelineAnimation>,
     binded_targets: Vec<TimelineTargetBinded>,
 }
 
@@ -116,7 +123,17 @@ impl TimelineSession {
     
     /// Accumulate playback time
     pub fn update_time(&mut self, elapsed:f32) {
-        self.progress += elapsed;
+        self.prev_progress = self.progress;
+        match self.playback {
+            TimelinePlayback::Forward => { self.progress += elapsed; self.progress = self.progress.min(self.duration) },
+            TimelinePlayback::ForwardLoop => self.progress = (self.progress + elapsed) % self.duration,
+            TimelinePlayback::Backward => { self.progress -= elapsed; self.progress = self.progress.max(self.duration) },
+            TimelinePlayback::BackwardLoop => self.progress = (self.progress - elapsed).abs() % self.duration,
+            TimelinePlayback::StepByRate(r) => self.progress = self.duration * r,
+            TimelinePlayback::StepByTime(t) => self.progress = t,
+            TimelinePlayback::Pause(_) => (),
+            TimelinePlayback::Stop => (),
+        }
     }
 }
 
@@ -164,6 +181,7 @@ impl TimelinePlayer {
         self.sessions.push(TimelineSession {
             is_loop_interpolation: true,
             duration: 0.0,
+            prev_progress: 0.0,
             progress: 0.0,
             playback: TimelinePlayback::Stop,
             play_duration: TimelineDuration::Original,
@@ -223,11 +241,18 @@ impl TimelinePlayer {
         self.sessions.iter_mut().for_each( |e| e.resume() );
     }
 
-    pub fn get_playing_entities<T:AnimatableValue>( &self ) -> impl Iterator<Item=&TimelineTargetBinded> {
+    pub fn get_playing_entities<T:AnimatableValue>( &self ) -> impl Iterator<Item=&(TimelineProgress,&TimelineTargetBinded)> {
         self.sessions.iter()
             .filter(|v| v.is_playing())
-            .map(|v| v.binded_targets.iter() )
+            .map(|v| {
+                let prg = TimelineProgress {
+                    duration: v.duration,
+                    prev_time: v.prev_progress,
+                    curr_time: v.progress,
+                };
+                v.binded_targets.iter().map( |v| (prg,v) )
+            } )
             .flatten()
-            .filter( |v| v.typ == T::typ() )
+            .filter( |v| v.1.typ == T::typ() )
     }
 }

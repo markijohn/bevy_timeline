@@ -23,12 +23,12 @@ pub trait AnimatableValue:Sized+'static {
     /// `keyframes` : all keyframes
     /// `out` : output
     /// return : Some(usize) : changed key frame index, None : keyframe not changed
-    fn interpolate_from_keyframe(play_time:f32, prev_idx:Option<usize>, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) -> Option<usize> {
+    fn interpolate_from_keyframe(prev_time:f32, curr_time:f32, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) {
         if keyframes.is_empty() {
-            return None;
+            return;
         }
-        
-        let (before,next) = match keyframes.binary_search_by(|probe| probe.time.partial_cmp(&time).unwrap()) {
+
+        let (before,next) = match keyframes.binary_search_by(|probe| probe.time.partial_cmp(&curr_time).unwrap()) {
             Ok(i) => {
                 let before = if i > 0 {
                     Some(i - 1) 
