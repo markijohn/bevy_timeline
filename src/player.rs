@@ -135,6 +135,11 @@ impl TimelineSession {
             TimelinePlayback::Stop => (),
         }
     }
+
+    pub fn get_entities<T:AnimatableValue>( &self ) -> impl Iterator<Item=&TimelineTargetBinded> {
+        self.binded_targets.iter()
+            .filter( |v| v.typ == T::typ() )
+    }
 }
 
 #[derive(Default)]
@@ -241,18 +246,5 @@ impl TimelinePlayer {
         self.sessions.iter_mut().for_each( |e| e.resume() );
     }
 
-    pub fn get_playing_entities<T:AnimatableValue>( &self ) -> impl Iterator<Item=&(TimelineProgress,&TimelineTargetBinded)> {
-        self.sessions.iter()
-            .filter(|v| v.is_playing())
-            .map(|v| {
-                let prg = TimelineProgress {
-                    duration: v.duration,
-                    prev_time: v.prev_progress,
-                    curr_time: v.progress,
-                };
-                v.binded_targets.iter().map( |v| (prg,v) )
-            } )
-            .flatten()
-            .filter( |v| v.1.typ == T::typ() )
-    }
+
 }

@@ -364,11 +364,13 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
         mut target_db: Query<&mut Self::Target>,
     ) {
         for player in players {
-            for (entity, timeline_target) in player.get_playing_entities::<V::Target>() {
-                if let Some(timeline_target) = assets.get( &timeline_target ) {
-                    if let Ok(timeline) = timeline_target.get_typed::<V>() {
-                        if let Ok(target) = target_db.get_mut( entity ) {
-                            V::interpolate(s, start, end, target);
+            for session in player.sessions().filter( |s| s.is_playing() ) {
+                if let Some(timeline) = assets.get( &session.anim_handle ) {
+                    for binded_target in session.get_entities::<V>() {
+                        if let Ok(out) = target_db.get_mut(binded_target.entity) {
+                            if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<V>() {
+                                V::interpolate_from_keyframe(session.progress, session.progress, keyframes, out);
+                            }
                         }
                     }
                 }

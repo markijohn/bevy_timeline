@@ -14,7 +14,7 @@ use crate::{TimelineError, TimelinePlayer};
 use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
 use crate::player::TimelinePlayback;
 
-pub trait AnimatableValue:Sized+'static {
+pub trait AnimatableValue:Clone+Sized+'static {
     type Target: Component<Mutability=Mutable>;
     
     /// TODO : fast keyframe search from cached(last searched index, last proceed time)
@@ -49,14 +49,15 @@ pub trait AnimatableValue:Sized+'static {
                 // TODO : If there is no next keyframe to process and the previous keyframe processed is 
                 // the same as the start keyframe, no processing is required, i.e., no Mut value is substituted, which prevents bevy from being marked Changed.
                 //end of keyframe
+                bef.interpolate(0, bef.data.clone(), None, out.as_mut());
             }
             (None, Some(next)) => {
                 //no start keyframe
             }
             (Some(bef), Some(next)) => {
                 let time_diff = next.time - bef.time;
-                let s = (time - bef.time) / time_diff;
-                bef.interpolate(s, next, out.as_mut());
+                let s = (curr_time - bef.time) / time_diff;
+                bef.interpolate(s, bef.data.clone(), Some(next.data.clone()), out.as_mut());
             }
             (None, None) => {
                 //No frames

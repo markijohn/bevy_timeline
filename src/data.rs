@@ -25,7 +25,7 @@ impl TimelineAnimation {
     pub fn load_animation<V:TimelineImplSets>(value:&Value) -> Result<TimelineAnimation, TimelineError> {
         let map = value.as_object().ok_or(TimelineError::IncorrectValueType("animation is not an object"))?;
         let name = map.get("name").ok_or(TimelineError::IncorrectValueType("name(in animation) is not exist"))?.as_str().ok_or(TimelineError::IncorrectValueType("timeline name must be string"))?.to_string();
-        let duration = map.get("name").ok_or(TimelineError::IncorrectValueType("duration(in animation) is not exist"))?.as_number().ok_or(TimelineError::IncorrectValueType("duration must be number"))?.as_f64().unwrap() as f32;
+        let duration = map.get("duration").ok_or(TimelineError::IncorrectValueType("duration(in animation) is not exist"))?.as_number().ok_or(TimelineError::IncorrectValueType("duration must be number"))?.as_f64().unwrap() as f32;
         let targets_value = map.get("targets").ok_or(TimelineError::IncorrectValueType("targets(in animation) is not exist"))?.as_array().ok_or(TimelineError::IncorrectValueType("targets must be array"))?;
         let mut targets = Vec::with_capacity(targets_value.len());
         for i in targets_value {
@@ -87,8 +87,8 @@ impl Drop for TimelineUntypedKeyframes {
 
 #[derive(TypePath,Asset)]
 pub struct TimelineUntypedTarget {
-    target: Vec<String>,
-    keyframes: TimelineUntypedKeyframes,
+    pub target: Vec<String>,
+    pub keyframes: TimelineUntypedKeyframes,
 }
 
 
