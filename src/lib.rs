@@ -295,7 +295,7 @@ fn prepare_animation<K:AnimatableValue>(
 pub trait TimelineImplSets {
     fn add_systems(app:&mut App);
     
-    fn try_resolve_keyframes(typ:&str, keyframes:&[Value]);
+    fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>>;
 }
 
 

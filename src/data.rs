@@ -50,10 +50,10 @@ pub struct TimelineKeyframe<T> where T:AnimatableValue{
 }
 
 impl <T> TimelineKeyframe<T> where T:AnimatableValue {
-    pub fn from<V:AnimatableValue>(value:&Value) -> Result<TimelineKeyframe<T>, TimelineError>{
+    pub fn from(value:&Value) -> Result<TimelineKeyframe<T>, TimelineError>{
         let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
         let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
-        let data = V::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
+        let data = T::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
         Ok( TimelineKeyframe { time,data } )
     }
 }
@@ -68,7 +68,7 @@ pub struct TimelineUntypedKeyframes {
 impl TimelineUntypedKeyframes {
     fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
         unsafe {
-            if T::typ() == self.typ() {
+            if T::typ() == self.typ {
                 Ok( std::slice::from_raw_parts(self.addr as *const TimelineKeyframe<T>, self.length) )
             } else {
                 Err( TimelineError::TypeNotMatch {request:T::typ(), actual: self.typ})

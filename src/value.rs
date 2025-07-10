@@ -49,7 +49,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
                 // TODO : If there is no next keyframe to process and the previous keyframe processed is 
                 // the same as the start keyframe, no processing is required, i.e., no Mut value is substituted, which prevents bevy from being marked Changed.
                 //end of keyframe
-                bef.interpolate(0, bef.data.clone(), None, out.as_mut());
+                Self::interpolate(0., bef.data.clone(), None, out.as_mut());
             }
             (None, Some(next)) => {
                 //no start keyframe
@@ -57,7 +57,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
             (Some(bef), Some(next)) => {
                 let time_diff = next.time - bef.time;
                 let s = (curr_time - bef.time) / time_diff;
-                bef.interpolate(s, bef.data.clone(), Some(next.data.clone()), out.as_mut());
+                Self::interpolate(s, bef.data.clone(), Some(next.data.clone()), out.as_mut());
             }
             (None, None) => {
                 //No frames
@@ -78,7 +78,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
 
         let mut keyframes = Vec::<TimelineKeyframe<Self>>::with_capacity( value.len() );
         for i in value {
-            keyframes.push( TimelineKeyframe::from::<Self>(i)? );
+            keyframes.push( TimelineKeyframe::<Self>::from(i)? );
         }
         let addr = keyframes.as_mut_ptr() as usize;
         let length = keyframes.len();
@@ -100,7 +100,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
     }
 }
 
-#[derive(TypePath)]
+#[derive(Clone)]
 pub struct Scale(Vec3);
 
 impl AnimatableValue for Scale {
@@ -132,23 +132,23 @@ impl AnimatableValue for Scale {
     }
 }
 
-impl <T,A,B> AnimatableValue for (A,B) where T:Component<Mutability=Mutable>, A:AnimatableValue<Target=T>+Clone, B:AnimatableValue<Target=T>+Clone {
-    type Target = T;
+// impl <T,A,B> AnimatableValue for (A,B) where T:Component<Mutability=Mutable>, A:AnimatableValue<Target=T>+Clone, B:AnimatableValue<Target=T>+Clone {
+//     type Target = T;
+// 
+//     fn interpolate(s: f32, start: Self, end: Self, out: &mut Self::Target) {
+// 
+//     }
+// 
+//     fn from_value(value: &Value) -> Result<Self, TimelineError> {
+//         todo!()
+//     }
+// 
+//     fn to_value(&self) -> Value {
+//         todo!()
+//     }
+// }
 
-    fn interpolate(s: f32, start: Self, end: Self, out: &mut Self::Target) {
-
-    }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        todo!()
-    }
-
-    fn to_value(&self) -> Value {
-        todo!()
-    }
-}
-
-#[derive(TypePath)]
+#[derive(Clone)]
 pub struct Rotation(Quat);
 
 impl AnimatableValue for Rotation {
@@ -183,7 +183,7 @@ impl AnimatableValue for Rotation {
 }
 
 
-#[derive(TypePath)]
+#[derive(Clone)]
 pub struct Translation(Vec3);
 
 impl AnimatableValue for Translation {
