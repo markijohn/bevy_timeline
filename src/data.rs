@@ -44,6 +44,7 @@ impl TimelineAnimation {
     }
 }
 
+#[derive(Clone)]
 pub struct TimelineKeyframe<T> where T:AnimatableValue{
     pub time:f32,
     pub data:T

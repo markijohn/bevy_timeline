@@ -369,7 +369,7 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
                     for binded_target in session.get_entities::<V>() {
                         if let Ok(out) = target_db.get_mut(binded_target.entity) {
                             if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<V>() {
-                                V::interpolate_from_keyframe(session.progress, session.progress, keyframes, out);
+                                V::interpolate_from_keyframe(session.duration, session.progress, session.progress, keyframes, out);
                             }
                         }
                     }
