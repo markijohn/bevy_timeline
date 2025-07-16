@@ -14,7 +14,7 @@ use crate::{TimelineError, TimelinePlayer};
 use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
 use crate::player::TimelinePlayback;
 
-pub trait AnimatableValue:Clone+Sized+'static {
+pub trait AnimatableValue:Default+Clone+Sized+'static {
     type Target: Component<Mutability=Mutable>;
     
     /// TODO : fast keyframe search from cached(last searched index, last proceed time)
@@ -23,7 +23,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
     /// `keyframes` : all keyframes
     /// `out` : output
     /// return : Some(usize) : changed key frame index, None : keyframe not changed
-    fn interpolate_from_keyframe(prev_time:f32, curr_time:f32, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) {
+    fn interpolate_from_keyframe(_duration:f32, _prev_time:f32, curr_time:f32, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) {
         if keyframes.is_empty() {
             return;
         }
@@ -31,7 +31,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
         let (before,next) = match keyframes.binary_search_by(|probe| probe.time.partial_cmp(&curr_time).unwrap()) {
             Ok(i) => {
                 let before = if i > 0 {
-                    Some(i - 1) 
+                    Some(i - 1)
                 } else { None };
                 let next = Some(i);
                 (before, next)
@@ -42,24 +42,24 @@ pub trait AnimatableValue:Clone+Sized+'static {
                 (before, next)
             }
         };
-        let (bef,next) = (before.map(|idx| &keyframes[idx]), next.map(|idx| &keyframes[idx]));
+        let (start,end) = (
+            before.map(|idx| keyframes[idx].clone()),
+            next.map(|idx| keyframes[idx].clone())
+        );
 
-        match (bef, next) {
-            (Some(bef), None) => {
+        match (start, end) {
+            (Some(start), None) => {
                 // TODO : If there is no next keyframe to process and the previous keyframe processed is 
                 // the same as the start keyframe, no processing is required, i.e., no Mut value is substituted, which prevents bevy from being marked Changed.
                 //end of keyframe
-                Self::interpolate(0., bef.data.clone(), None, out.as_mut());
+                Self::interpolate(0., start.data, None, out.as_mut());
             }
-            (None, Some(next)) => {
-                //no start keyframe
+            (Some(start), Some(end)) => {
+                let time_diff = end.time - start.time;
+                let s = (curr_time - start.time) / time_diff;
+                Self::interpolate(s, start.data, Some(end.data), out.as_mut());
             }
-            (Some(bef), Some(next)) => {
-                let time_diff = next.time - bef.time;
-                let s = (curr_time - bef.time) / time_diff;
-                Self::interpolate(s, bef.data.clone(), Some(next.data.clone()), out.as_mut());
-            }
-            (None, None) => {
+            _ => {
                 //No frames
             }
         }
@@ -100,7 +100,7 @@ pub trait AnimatableValue:Clone+Sized+'static {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default,Clone)]
 pub struct Scale(Vec3);
 
 impl AnimatableValue for Scale {
@@ -152,7 +152,7 @@ impl AnimatableValue for Scale {
 //     }
 // }
 
-#[derive(Clone)]
+#[derive(Default,Clone)]
 pub struct Rotation(Quat);
 
 impl AnimatableValue for Rotation {
@@ -191,7 +191,7 @@ impl AnimatableValue for Rotation {
 }
 
 
-#[derive(Clone)]
+#[derive(Default,Clone)]
 pub struct Translation(Vec3);
 
 impl AnimatableValue for Translation {
