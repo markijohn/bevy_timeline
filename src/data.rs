@@ -1,20 +1,20 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 use bevy_app::App;
 use bevy_asset::{AssetId, Handle};
 use bevy_asset::prelude::Asset;
 use bevy_asset::uuid::Uuid;
 use bevy_reflect::TypePath;
-use crate::timeline::Keyframe;
 use serde::Deserialize;
 use serde_json::Value;
-use crate::{AnimatableValue, Timeline, TimelineError, TimelineImplSets};
+use crate::{AnimatableValue, TimelineError, TimelineImplSets};
 
 
-#[derive(TypePath,Asset)]
+#[derive(Debug,TypePath,Asset)]
 pub struct TimelineAnimationSet(pub(crate) Vec<Handle<TimelineAnimation>>);
 
-#[derive(TypePath,Asset)]
+#[derive(Debug,TypePath,Asset)]
 pub struct TimelineAnimation {
     pub name: String,
     pub duration: f32,
@@ -35,7 +35,7 @@ impl TimelineAnimation {
     }
 
     pub fn load_animations<V:TimelineImplSets>(value:&Value) -> Result<Vec<TimelineAnimation>, TimelineError> {
-        let anims_value = value.as_array().ok_or("timeline must be array")?;
+        let anims_value = value.as_array().ok_or(TimelineError::IncorrectValueType("timeline must be array") )?;
         let mut anims = Vec::with_capacity( anims_value.len() );
         for i in anims_value {
             anims.push( Self::load_animation::<V>( i )? );
@@ -91,6 +91,12 @@ pub struct TimelineUntypedTarget {
     pub keyframes: TimelineUntypedKeyframes,
 }
 
+impl Debug for TimelineUntypedTarget {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "TimelineUntypedTarget({}, keyframes:{})", self.target.join(","), self.keyframes.length)
+    }
+}
+
 
 impl TimelineUntypedTarget {
     pub fn typ(&self) -> &'static str {
@@ -105,7 +111,7 @@ impl TimelineUntypedTarget {
             .as_array().ok_or(TimelineError::IncorrectValueType("target must be string array"))?;
         let mut target = Vec::with_capacity(target_value.len());
         for i in target_value {
-            target.push( value.as_str().ok_or(TimelineError::IncorrectValueType("target must be string"))?.to_string() );
+            target.push( i.as_str().ok_or(TimelineError::IncorrectValueType("target must be string"))?.to_string() );
         }
         let value = map.get("keyframes").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
             .as_array().ok_or(TimelineError::IncorrectValueType("keyframes is not array"))?;

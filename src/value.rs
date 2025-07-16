@@ -130,6 +130,10 @@ impl AnimatableValue for Scale {
         let scale = self.0;
         Value::Array(vec![Value::from(scale.x), Value::from(scale.y), Value::from(scale.z)])
     }
+
+    fn typ() -> &'static str {
+        "Scale"
+    }
 }
 
 // impl <T,A,B> AnimatableValue for (A,B) where T:Component<Mutability=Mutable>, A:AnimatableValue<Target=T>+Clone, B:AnimatableValue<Target=T>+Clone {
@@ -180,6 +184,10 @@ impl AnimatableValue for Rotation {
         let rotation = self.0;
         Value::Array(vec![Value::from(rotation.x), Value::from(rotation.y), Value::from(rotation.z), Value::from(rotation.w) ])
     }
+
+    fn typ() -> &'static str {
+        "Rotation"
+    }
 }
 
 
@@ -212,5 +220,9 @@ impl AnimatableValue for Translation {
     fn to_value(&self) -> Value {
         let translation = self.0;
         Value::Array(vec![Value::from(translation.x), Value::from(translation.y), Value::from(translation.z)])
+    }
+
+    fn typ() -> &'static str {
+        "Translation"
     }
 }

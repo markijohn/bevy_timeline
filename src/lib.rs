@@ -20,7 +20,6 @@
 //! the [`TimelinePlayerLoader`] and stores the data in the [`TimelineResolvedCache`].
 
 mod player;
-mod timeline;
 mod value;
 mod loader;
 mod data;
@@ -30,7 +29,6 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 pub use value::{AnimatableValue, Scale, Rotation, Translation};
 pub use player::{TimelinePlayer, TimelineSession};
-pub use timeline::{Timeline};
 
 use std::marker::PhantomData;
 use bevy_app::prelude::*;
@@ -44,8 +42,9 @@ use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
-use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes, TimelineUntypedTarget};
+pub use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes, TimelineUntypedTarget};
 use crate::loader::TimelineAnimationSetLoader;
+use crate::player::TimelineTargetBinded;
 
 pub type DefaultTransformSet = (Scale, Rotation, Translation);
 
@@ -63,10 +62,10 @@ pub enum TimelineError {
     #[error("Json value type is incorrect: {0}")]
     IncorrectValueType(&'static str),
 
-    #[error("TimelineTarget cast failed(type not match) : {0} -> {1}")]
+    #[error("TimelineTarget cast failed(type not match) : {request} -> {actual}")]
     TypeNotMatch{ request:&'static str, actual:&'static str },
 
-    #[error("Unknown TimelineTarget type : {}")]
+    #[error("Unknown TimelineTarget type : {0}")]
     UnknownTargetType(String),
 
     #[error("Unknown Timeline error : {0}")]
@@ -88,13 +87,21 @@ pub struct TimelinePlugin<B:TimelineImplSets> {
     inner: PhantomData<B>,
 }
 
+impl <B:TimelineImplSets> TimelinePlugin<B> {
+    pub fn new() -> Self{
+        Self {
+            inner: PhantomData,
+        }
+    }
+}
+
 
 impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets + Send + Sync + 'static {
     fn build(&self, app: &mut App) {
         app
             .init_asset::<TimelineAnimationSet>()
             .init_asset::<TimelineAnimation>()
-            .register_asset_loader( TimelineAnimationSetLoader );
+            .register_asset_loader( TimelineAnimationSetLoader::<B>::new() );
         app.configure_sets(
             PostUpdate,
             (
@@ -112,13 +119,17 @@ impl <B> Plugin for TimelinePlugin<B> where B:TimelineImplSets + Send + Sync + '
 
 
 fn bind_target_entities(
+    assets: Res<Assets<TimelineAnimation>>,
     mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), Added<TimelinePlayer>>,
+    // mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>)>,
     childs: Query<(Entity, &Name, Option<&Children>)>,
 ) {
     // Collect entity paths: Vec<(Entity, Vec<&str>)>
-    for (_self_entity, player, children) in player_loaders.iter_mut() {
-
+    for (_self_entity, mut player, children) in player_loaders.iter_mut() {
         let mut entity_paths: Vec<(Entity, Vec<&str>)> = Vec::new();
+        entity_paths.push( (_self_entity, vec!["_self"]) );
+
+        let sessions = player.sessions_mut();
 
         if let Some(children) = children {
             //entity & path to parent
@@ -153,141 +164,28 @@ fn bind_target_entities(
             println!("Entity {:?}: {:?}", entity, path);
         }
 
+        for session in sessions {
+            println!("Session: {:?}", session.anim_handle);
+            if let Some(timeline) = assets.get( &session.anim_handle ) {
+                println!("k......: {:?}", session.anim_handle);
+                let mut binded_targets = Vec::new();
+                for (target_idx,target) in timeline.targets.iter().enumerate() {
+                    let names = target.target.as_slice();
+                    if let Some( finded) = entity_paths.iter().find( |e| e.1.as_slice() == names) {
+                        let binded = TimelineTargetBinded {
+                            typ : target.typ(),
+                            entity: finded.0,
+                            target_idx
+                        };
+                        binded_targets.push( binded );
+                    }
+                }
+                session.set_binded( binded_targets );
+                println!("Some binded");
+            }
+        }
         // entity_paths를 사용하여 필요한 작업 수행
         // ...
-    }
-}
-
-fn load_player(
-    mut cmds:Commands,
-    timeline_data_assets: Res<Assets<TimelineAnimation>>,
-    mut player_loaders: Query<(Entity, &mut TimelinePlayer, Option<&Children>), Added<TimelinePlayer> >,
-    has_childs:Query<(Entity,&Name,&Children)>,
-    last_level_childs:Query<(Entity,&Name), Without<Children>>,
-) {
-    //Collect named entity
-
-    for (_self_entity, player_loader, children) in player_loaders.iter_mut() {
-        let mut entity_map = HashMap::new();
-        if let Some(children) = children {
-            let mut dig = children.iter().collect::<Vec<Entity>>();
-            while dig.len() > 0 {
-                let Some(next) = dig.pop() else { break };
-                if let Ok((dig_under, name, children)) = has_childs.get(next) {
-                    //bind exist target
-                    entity_map.insert( name.as_str(), dig_under.clone() );
-                    dig.extend(children.iter().collect::<Vec<Entity>>());
-                } else {
-                    if let Ok((entity, name)) = last_level_childs.get(next) {
-                        //bind exist target
-                        entity_map.insert( name.as_str(), entity );
-                    }
-                }
-            }
-        }
-        
-
-        //Insert player
-        for (id, req_anim_list) in player_loader.req_list.iter() {
-            let mut player = TimelinePlayer::new();
-            let (overwrite,player_mut) = if player_loader.overwrite {
-                (true, exist_player.unwrap_or( &mut player ))
-            } else {
-                (false, &mut player)
-            };
-            if let Some(timeline_data) = timeline_data_assets.get( *id ) {
-                for (anim_idx,anim) in timeline_data.anims.iter().enumerate() {
-                    let mut session_bind_target:Vec<Option<(Entity,TimelineId)>> = Vec::new();
-                    if req_anim_list.iter().find( |v| v.as_ref() == &anim.name ).is_some() {
-                        let timeline_animid = TimelineAnimId { data_id: id.clone(), anim_idx };
-                        for (target_idx,target) in anim.targets.iter().enumerate() {
-                            let timeline_id = TimelineId { anim_id: timeline_animid.clone(), target_idx };
-                            let target_name = target.name.as_str();
-                            let bind = if target_name == "_self" {
-                                Some( (_self_entity.clone(), timeline_id) )
-                            } else if let Some(entity) = entity_map.get( target_name ) {
-                                Some( (entity.clone(), timeline_id) )
-                            } else {
-                                // warn!("Can't find target {}({})", target_name, target.typ);
-                                None
-                            };
-                            session_bind_target.push(bind);
-                        }
-                        player_mut.create_session(timeline_animid, session_bind_target);
-                    }
-                }
-
-                if !overwrite {
-                    cmds.entity(_self_entity)
-                        .insert( player )
-                        .remove::< TimelinePlayerLoader>();
-                }
-
-            }
-        }
-    }
-
-
-
-}
-
-
-fn animate_step<K>(
-    mut cmds: Commands,
-    anim_cache: Res<TimelineResolvedCache<K>>,
-    keyframes: Res<Assets<Timeline<K>>>,
-    players: Query<(&TimelinePlayer)>,
-    target_query: Query<&mut K::Target, With<Name>>
-) where K:AnimatableValue+Send+Sync+TypePath {
-    for player in players.iter() {
-        for (_name, session) in player.sessions().filter( | (_,s)| s.is_playing ) {
-            for (target_entity, untyped_timeline_handle) = session.binded_targets() {
-                if let Ok( target ) = target_query.get(target_entity) {
-                    //get animatable
-                    let timeline = untyped_timeline_handle.typed::<Timeline<K>>();
-                    session.interpolate( timeline, target );
-                }
-            }
-        }
-    }
-}
-
-#[derive(Event)]
-pub struct TimelineStepEvent<K> {
-    entity: Entity,
-    resovled_target_id: TimelineCacheId,
-    inner: PhantomData<K>
-}
-
-
-fn consume_animation_step<K>(
-    keyframes: Res<Assets<Timeline<K>>>,
-    mut step_reader: EventReader<TimelineStepEvent<K>>,
-    players: Query<(&TimelinePlayer)>,
-    mut target_query: Query<&mut K::Target, With<Name>>
-) where K:AnimatableValue+Send+Sync+TypePath {
-    for event in step_reader.read() {
-        if let Ok(mut target) = target_query.get_mut( event.entity ) {
-            if let Some(timeline) = keyframes.get( event.resovled_target_id.typed_id::<Timeline<K>>() ) {
-                timeline.interpolate( event.progress, target);
-            }
-        }
-    }
-}
-
-
-//Remove expired and stopped session
-//Mark step
-fn prepare_animation<K:AnimatableValue>(
-    mut commands: Commands,
-    time: Res<Time>,
-    assets: Res<Assets<Timeline<K>>>,
-    entity_players: Query<(&mut TimelinePlayer, &Children)>,
-    inactives: Query<(Entity, &mut K::Target)>,
-    actives: Query<(Entity, &mut K::Target)>,
-) where K:AnimatableValue+Send+Sync+TypePath {
-    for player in entity_players {
-
     }
 }
 
@@ -340,7 +238,7 @@ impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13
 impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15 );
 
 
-pub trait AnimatableSet {
+pub trait AnimatableSet where Self: 'static {
     type Target:Component<Mutability=Mutable>;
     fn add_system(app:&mut bevy_app::App) {
         app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
@@ -380,7 +278,7 @@ impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
 
     fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
         if typ == V::typ() {
-            Some( V::to_untyped_keyframes( value ) )
+            Some( V::craete_untyped_keyframes( value ) )
         } else {
             None
         }
@@ -391,9 +289,39 @@ macro_rules! impl_animatable_set {
     ( $F:ident, $($T:ident),+ ) => {
         impl<$F, $($T),+> AnimatableSet for ($F, $($T,)+)
         where
-            $F:AnimatableValue, $($T: AnimatableValue,)+
+            $F:AnimatableValue, $($T: AnimatableValue<Target=$F::Target>,)+
         {
             type Target = $F::Target;
+
+            fn step(
+                assets: Res<Assets<TimelineAnimation>>,
+                players: bevy_ecs::system::Query<&TimelinePlayer>,
+                mut outputs: bevy_ecs::system::Query<&mut <Self as AnimatableSet>::Target>) {
+
+                for player in players {
+                    for session in player.sessions().filter( |s| s.is_playing() ) {
+                        if let Some(timeline) = assets.get( &session.anim_handle ) {
+                            for binded_target in session.get_entities::<$F>() {
+                                if let Ok(out) = outputs.get_mut(binded_target.entity) {
+                                    if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$F>() {
+                                        $F::interpolate_from_keyframe(session.progress, session.progress, keyframes, out);
+                                    }
+                                }
+                            }
+
+                            $(
+                            for binded_target in session.get_entities::<$T>() {
+                                if let Ok(out) = outputs.get_mut(binded_target.entity) {
+                                    if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$T>() {
+                                        $T::interpolate_from_keyframe(session.progress, session.progress, keyframes, out);
+                                    }
+                                }
+                            }
+                            )+
+                        }
+                    }
+                }
+            }
 
             fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
                 if $F::typ() == typ {
@@ -406,12 +334,13 @@ macro_rules! impl_animatable_set {
                 )+
                 None
             }
+
         }
     };
 }
 
 // impl_animatable_set!(T1);
-// impl_animatable_set!(T1, T2);
+impl_animatable_set!(T1, T2);
 impl_animatable_set!(T1, T2, T3);
 impl_animatable_set!(T1, T2, T3, T4);
 impl_animatable_set!(T1, T2, T3, T4, T5);

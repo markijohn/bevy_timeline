@@ -9,6 +9,13 @@
         "keyframes" : [
           {"time": 0.0,"data": [0.0, 0.0, 0.0]}, {"time": 1.0, "data": [2.0, 0.0, 0.0]}
         ]
+      },
+      {
+        "typ" : "ColorMaterial",
+        "target" : ["some_child","sub"],
+        "keyframes" : [
+          {"time": 0.0,"data": 4321453532}, {"time": 0.5, "data": 43215321232}
+        ]
       }
     ]
   }

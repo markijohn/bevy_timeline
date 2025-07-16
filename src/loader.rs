@@ -2,15 +2,24 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::marker::PhantomData;
 use bevy_asset::io::Reader;
-use bevy_asset::{AssetLoader, LoadContext};
+use bevy_asset::{AssetLoader, LoadContext, LoadedAsset};
 use thiserror::Error;
 use std::str::FromStr;
 use bevy_asset::AsyncReadExt;
 use crate::data::{TimelineAnimation, TimelineAnimationSet};
 use crate::{TimelineError, TimelineImplSets};
 
+#[derive(Default)]
 pub struct TimelineAnimationSetLoader<K> {
     inner: PhantomData<K>
+}
+
+impl<K> TimelineAnimationSetLoader<K> {
+    pub fn new() -> Self {
+        Self {
+            inner: PhantomData
+        }
+    }
 }
 
 impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets + Send + Sync + 'static {
@@ -29,15 +38,32 @@ impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets 
         let value = serde_json::Value::from_str(&string)?;
         let anims = TimelineAnimation::load_animations::<K>( &value )?;
         let mut anim_sets = Vec::with_capacity(anims.len());
+        
+        
         anims.into_iter().for_each( |anim| {
             anim_sets.push(
-                load_context.add_labeled_asset(anim.name.clone(), anim)
+                load_context.add_loaded_labeled_asset(anim.name.clone(), LoadedAsset::from(anim))
             );
         });
+        println!("{:?}", anim_sets);
         Ok( TimelineAnimationSet(anim_sets) )
     }
 
     fn extensions(&self) -> &[&str] {
         &["json"]
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::str::FromStr;
+    use crate::{DefaultTransformSet, TimelineAnimation};
+
+    #[test]
+    fn load_test() {
+        let string = std::fs::read_to_string( "assets/basic.json" ).unwrap();
+        let value = serde_json::Value::from_str(&string).unwrap();
+        let anims = TimelineAnimation::load_animations::< DefaultTransformSet >( &value ).unwrap();
+        println!("{:?}", anims);
     }
 }

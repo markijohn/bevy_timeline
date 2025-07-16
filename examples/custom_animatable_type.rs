@@ -1,15 +1,37 @@
 use std::borrow::Cow;
 use bevy::prelude::*;
+use bevy_math::VectorSpace;
 use serde_json::Value;
-use bevy_timeline::{AnimatableValue, TimelinePlayer, TimelinePlugin};
+use bevy_timeline::{AnimatableValue, TimelineError, TimelinePlayer, TimelinePlugin};
 
 
+
+#[derive(Clone)]
 struct PointLightIntensity(f32);
 impl AnimatableValue for PointLightIntensity {
     type Target = PointLight;
 
-    fn interpolate(s: f32, start: Self, end: Self, out: &mut Self::Target) {
-        out.intensity = start.0.lerp( end.0, s );
+    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
+        out.intensity = start.0.lerp( end.unwrap_or(start) );
+    }
+
+    fn from_value(value: &Value) -> std::result::Result<Self, Cow<'static, str>> {
+        Ok( Self( value.as_number().unwrap().as_f64().unwrap() as f32 ) )
+    }
+
+    fn to_value(&self) -> Value {
+        Value::Number( serde_json::Number::from(self.0) )
+    }
+}
+
+#[derive(Clone)]
+struct PointLightRadius(f32);
+impl AnimatableValue for PointLightIntensity {
+    type Target = PointLight;
+
+    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
+        out.
+        out.intensity = start.0.lerp( end.unwrap_or(start) );
     }
 
     fn from_value(value: &Value) -> std::result::Result<Self, Cow<'static, str>> {
@@ -25,7 +47,7 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(
-            TimelinePlugin::default().register_set( (PointLightIntensity, PointLightRange, PointLightRadius) )
+            TimelinePlugin::default().register_set( (PointLightIntensity, PointLightRadius) )
         )
         .add_systems(Startup, setup)
         .run();

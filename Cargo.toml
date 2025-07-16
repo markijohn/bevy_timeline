@@ -38,10 +38,7 @@ bevy = { version = "0.16.0", default-features = false, features = [
     "bevy_state",
     "bevy_window",
     "bevy_pbr",
-    "bevy_sprite",
     "bevy_core_pipeline",
-    "bevy_picking",
-    "animation",
 ] }
 egui_dock = "0.16"
 bevy_math = { version = "0.16.0", features = ["mint"] }

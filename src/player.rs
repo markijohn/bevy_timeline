@@ -78,6 +78,10 @@ impl TimelineSession {
     pub fn binded_targets(&self) -> &[TimelineTargetBinded] {
         self.binded_targets.as_slice()
     }
+    
+    pub fn set_binded(&mut self, binded:Vec<TimelineTargetBinded>) {
+        self.binded_targets = binded;
+    }
 
     /// The `play` function always starts at time `0` (but can depend on the start of `TimelinePlayOption`)
     pub fn play(&mut self, option:TimelinePlayOption) {
@@ -178,11 +182,11 @@ pub struct TimelinePlayer {
 }
 
 impl TimelinePlayer {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Default::default()
     }
 
-    pub fn create_session(&mut self, anim_handle:Handle<TimelineAnimation>, binded_targets:Vec<TimelineTargetBinded>) {
+    pub fn create_session(mut self, anim_handle:Handle<TimelineAnimation>) -> Self {
         self.sessions.push(TimelineSession {
             is_loop_interpolation: true,
             duration: 0.0,
@@ -191,8 +195,9 @@ impl TimelinePlayer {
             playback: TimelinePlayback::Stop,
             play_duration: TimelineDuration::Original,
             anim_handle,
-            binded_targets,
+            binded_targets: Vec::new(),
         });
+        self
     }
     
     pub fn sessions(&self) -> impl Iterator<Item=&TimelineSession> {
