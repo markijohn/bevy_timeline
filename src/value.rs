@@ -108,9 +108,9 @@ impl AnimatableValue for Scale {
 
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         if let Some(end) = end {
-            out.scale = (end.0 - start.0) * s;
+            out.scale = start.0 + (end.0 - start.0) * s;
         } else {
-            out.scale = start.0
+            out.scale = start.0;
         }
     }
 
@@ -135,22 +135,6 @@ impl AnimatableValue for Scale {
         "Scale"
     }
 }
-
-// impl <T,A,B> AnimatableValue for (A,B) where T:Component<Mutability=Mutable>, A:AnimatableValue<Target=T>+Clone, B:AnimatableValue<Target=T>+Clone {
-//     type Target = T;
-// 
-//     fn interpolate(s: f32, start: Self, end: Self, out: &mut Self::Target) {
-// 
-//     }
-// 
-//     fn from_value(value: &Value) -> Result<Self, TimelineError> {
-//         todo!()
-//     }
-// 
-//     fn to_value(&self) -> Value {
-//         todo!()
-//     }
-// }
 
 #[derive(Default,Clone)]
 pub struct Rotation(Quat);
@@ -199,9 +183,11 @@ impl AnimatableValue for Translation {
 
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         if let Some(end) = end {
-            out.translation = (end.0 - start.0) * s;
+            out.translation = start.0 + (end.0 - start.0) * s;
+            // println!("translation(0) {}", out.translation);
         } else {
             out.translation = start.0;
+            // println!("translation(1) {}", out.translation);
         }
     }
 

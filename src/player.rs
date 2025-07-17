@@ -18,7 +18,7 @@ pub enum TimelinePlayback {
     Stop            // Stop playback and reset to initial state
 }
 
-#[derive(Default)]
+#[derive(Clone,Default)]
 pub enum TimelineDuration {
     /// Play with the original animation duration
     #[default]
@@ -36,6 +36,8 @@ pub enum TimelineDuration {
     TimeScale(f32),
 }
 
+
+#[derive(Clone)]
 pub enum TimelinePosition {
     /// Relative position (0.0 = start, 1.0 = end)
     Normalized(f32), // position = duration * normalized_value
@@ -147,7 +149,7 @@ impl TimelineSession {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone,Default)]
 pub struct TimelinePlayOption {
     position: Option<TimelinePosition>,
     playback: Option<TimelinePlayback>,
@@ -155,6 +157,10 @@ pub struct TimelinePlayOption {
 }
 
 impl TimelinePlayOption {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
     /// Set the playback start time
     pub fn set_position(mut self, start:TimelinePosition) -> Self{
         self.position = Some(start);
@@ -179,7 +185,8 @@ impl TimelinePlayOption {
 #[derive(Component, Default)]
 pub struct TimelinePlayer {
     sessions : Vec<TimelineSession>,
-    shortcut : HashMap<String, usize>
+    shortcut : HashMap<String, usize>,
+    lazy_play : HashMap<String, TimelinePlayOption>,
 }
 
 impl TimelinePlayer {
@@ -200,6 +207,17 @@ impl TimelinePlayer {
         });
         self
     }
+
+    pub fn set_shortcuts(&mut self, shortcut:Vec<String>) {
+        for (idx,shortcut) in shortcut.into_iter().enumerate() {
+            self.shortcut.insert(shortcut, idx);
+        }
+        for (name, play_option) in self.lazy_play.iter() {
+            if let Some(idx) = self.shortcut.get(name) {
+                self.sessions[*idx].play( play_option.clone() );
+            }
+        }
+    }
     
     pub fn sessions(&self) -> impl Iterator<Item=&TimelineSession> {
         self.sessions.iter()
@@ -210,10 +228,12 @@ impl TimelinePlayer {
     }
 
     /// Plays the animation with the given name and returns its state before playing.
-    pub fn play(&mut self, name:&str, option:Option<TimelinePlayOption>) {
+    pub fn play(&mut self, name:&str, option:TimelinePlayOption) {
         if let Some( session_idx) = self.shortcut.get( name ) {
             let session = &mut self.sessions[ *session_idx ];
-            session.play( option.unwrap_or_default() );
+            session.play( option );
+        } else {
+            self.lazy_play.insert( name.to_string(), option );
         }
     }
 
@@ -252,5 +272,8 @@ impl TimelinePlayer {
         self.sessions.iter_mut().for_each( |e| e.resume() );
     }
 
-
+    pub fn update_time(&mut self, time:f32) {
+        println!("{time}");
+        self.sessions_mut().for_each(|session| session.update_time(time) );
+    }
 }

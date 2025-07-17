@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde_json::Value;
-use bevy_timeline::{AnimatableValue, DefaultTransformSet, TimelineAnimation, TimelineError, TimelinePlayer, TimelinePlugin};
+use bevy_timeline::{AnimatableValue, DefaultTransformSet, TimelineAnimation, TimelineError, TimelinePlayOption, TimelinePlayback, TimelinePlayer, TimelinePlugin};
 
 #[derive(Default, Clone)]
 struct PointLightIntensity(f32);
@@ -18,6 +18,10 @@ impl AnimatableValue for PointLightIntensity {
 
     fn to_value(&self) -> Value {
         Value::from( self.0 )
+    }
+
+    fn typ() -> &'static str {
+        "PointLightIntensity"
     }
 }
 
@@ -38,6 +42,10 @@ impl AnimatableValue for PointLightRadius {
     fn to_value(&self) -> Value {
         Value::from( self.0 )
     }
+
+    fn typ() -> &'static str {
+        "PointLightRadius"
+    }
 }
 
 fn main() {
@@ -45,7 +53,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(TimelinePlugin::< (
             DefaultTransformSet,
-            // (PointLightIntensity, PointLightRadius)
+            (PointLightIntensity, PointLightRadius)
         )>::new())
         .add_systems(Startup, setup)
         .run();
@@ -69,7 +77,7 @@ fn setup(
     
     // cube
     let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#BasicTest") );
-    player.play("BasicTest", None);
+    player.play("BasicTest", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(2.0, 2.0, 2.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
@@ -78,12 +86,15 @@ fn setup(
     ));
     
     // light
+    let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#PointLightAnim") );
+    player.play("PointLightAnim", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
     commands.spawn((
         PointLight {
             shadows_enabled: true,
             ..default()
         },
         Transform::from_xyz(4.0, 8.0, 4.0),
+        player,
     ));
     
     // camera
