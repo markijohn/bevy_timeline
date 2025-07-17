@@ -167,7 +167,6 @@ fn bind_target_entities(
         for session in sessions {
             println!("Session: {:?}", session.anim_handle);
             if let Some(timeline) = assets.get( &session.anim_handle ) {
-                println!("k......: {:?}", session.anim_handle);
                 let mut binded_targets = Vec::new();
                 for (target_idx,target) in timeline.targets.iter().enumerate() {
                     let names = target.target.as_slice();
@@ -199,7 +198,7 @@ pub trait TimelineImplSets {
 
 macro_rules! impl_timeline_impl_sets {
     ( $($tuple:ident),+ ) => {
-        impl < $($tuple),+ > TimelineImplSets for ( $($tuple,)+ )
+        impl < $($tuple,)+ > TimelineImplSets for ( $($tuple,)+ )
         where $($tuple:AnimatableSet,) +
         {
             fn add_systems(app:&mut App) {
@@ -207,7 +206,7 @@ macro_rules! impl_timeline_impl_sets {
                 <$tuple as AnimatableSet>::add_system( app );
                 )+
             }
-            
+
             fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
                 $(
                 let result = <$tuple as AnimatableSet>::try_resolve_keyframes( typ, keyframes );
@@ -220,6 +219,22 @@ macro_rules! impl_timeline_impl_sets {
         }
     };
 }
+
+// impl <T1> TimelineImplSets for ( T1 )
+// where T1:AnimatableSet {
+//     fn add_systems(app:&mut App) {
+//         <T1 as AnimatableSet>::add_system( app );
+//     }
+//
+//     fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
+//         let result = <T1 as AnimatableSet>::try_resolve_keyframes( typ, keyframes );
+//         if result.is_some() {
+//             return result;
+//         }
+//         None
+//     }
+// }
+
 
 impl_timeline_impl_sets!( T1 );
 impl_timeline_impl_sets!( T1, T2 );
@@ -241,6 +256,8 @@ impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13
 pub trait AnimatableSet where Self: 'static {
     type Target:Component<Mutability=Mutable>;
     fn add_system(app:&mut bevy_app::App) {
+        println!("Added system {:?}", std::any::type_name::<Self>() );
+
         app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
     }
 
@@ -253,37 +270,54 @@ pub trait AnimatableSet where Self: 'static {
     fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>>;
 }
 
-impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
-    type Target = V::Target;
+// impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
+//     type Target = V::Target;
+//
+//     fn step(
+//         assets: Res<Assets<TimelineAnimation>>,
+//         players: Query<&TimelinePlayer>,
+//         mut target_db: Query<&mut Self::Target>,
+//     ) {
+//         for player in players {
+//             for session in player.sessions().filter( |s| s.is_playing() ) {
+//                 if let Some(timeline) = assets.get( &session.anim_handle ) {
+//                     for binded_target in session.get_entities::<V>() {
+//                         if let Ok(out) = target_db.get_mut(binded_target.entity) {
+//                             if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<V>() {
+//                                 V::interpolate_from_keyframe(session.duration, session.progress, session.progress, keyframes, out);
+//                             }
+//                         }
+//                     }
+//                 }
+//             }
+//         }
+//     }
+//
+//     fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
+//         if typ == V::typ() {
+//             Some( V::craete_untyped_keyframes( value ) )
+//         } else {
+//             None
+//         }
+//     }
+// }
 
-    fn step(
-        assets: Res<Assets<TimelineAnimation>>,
-        players: Query<&TimelinePlayer>,
-        mut target_db: Query<&mut Self::Target>,
-    ) {
-        for player in players {
-            for session in player.sessions().filter( |s| s.is_playing() ) {
-                if let Some(timeline) = assets.get( &session.anim_handle ) {
-                    for binded_target in session.get_entities::<V>() {
-                        if let Ok(out) = target_db.get_mut(binded_target.entity) {
-                            if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<V>() {
-                                V::interpolate_from_keyframe(session.duration, session.progress, session.progress, keyframes, out);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
-        if typ == V::typ() {
-            Some( V::craete_untyped_keyframes( value ) )
-        } else {
-            None
-        }
-    }
-}
+// impl AnimatableSet for (Scale, Rotation, Translation) {
+//     type Target = Transform;
+//
+//     fn add_system(app: &mut App) {
+//         todo!()
+//     }
+//
+//     fn step(assets: Res<Assets<TimelineAnimation>>,
+//             players: bevy_ecs::system::Query<&TimelinePlayer>,
+//             mut outputs: bevy_ecs::system::Query<&mut <Self as AnimatableSet>::Target>) {
+//     }
+//
+//     fn try_resolve_keyframes(typ: &str, value: &[Value]) -> Option<Result<TimelineUntypedKeyframes, TimelineError>> {
+//         todo!()
+//     }
+// }
 
 macro_rules! impl_animatable_set {
     ( $F:ident, $($T:ident),+ ) => {
@@ -298,13 +332,18 @@ macro_rules! impl_animatable_set {
                 players: bevy_ecs::system::Query<&TimelinePlayer>,
                 mut outputs: bevy_ecs::system::Query<&mut <Self as AnimatableSet>::Target>) {
 
+                println!("Find step");
                 for player in players {
                     for session in player.sessions().filter( |s| s.is_playing() ) {
+                        println!("Find playing");
                         if let Some(timeline) = assets.get( &session.anim_handle ) {
+                            println!("Find anim");
                             for binded_target in session.get_entities::<$F>() {
+                                println!("Find binded");
                                 if let Ok(out) = outputs.get_mut(binded_target.entity) {
                                     if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$F>() {
-                                        $F::interpolate_from_keyframe(session.progress, session.progress, keyframes, out);
+                                        println!("interpol");
+                                        $F::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, keyframes, out);
                                     }
                                 }
                             }
@@ -313,7 +352,7 @@ macro_rules! impl_animatable_set {
                             for binded_target in session.get_entities::<$T>() {
                                 if let Ok(out) = outputs.get_mut(binded_target.entity) {
                                     if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$T>() {
-                                        $T::interpolate_from_keyframe(session.progress, session.progress, keyframes, out);
+                                        $T::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, keyframes, out);
                                     }
                                 }
                             }
@@ -325,11 +364,11 @@ macro_rules! impl_animatable_set {
 
             fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
                 if $F::typ() == typ {
-                    return $F::try_resolve_keyframes( typ, value )
+                    return Some( $F::create_untyped_keyframes( value ) )
                 }
                 $(
                 if $T::typ() == typ {
-                    return $F::try_resolve_keyframes( typ, value )
+                    return Some( $F::create_untyped_keyframes( value ) )
                 }
                 )+
                 None

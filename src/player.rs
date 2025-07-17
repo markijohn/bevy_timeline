@@ -7,8 +7,8 @@ use crate::data::{TimelineAnimation};
 
 #[derive(Clone,Default)]
 pub enum TimelinePlayback {
-    #[default]
     Forward,        // Play forward from current position until animation duration
+    #[default]
     ForwardLoop,    // Play forward continuously until stopped
     Backward,       // Play backward from current position until animation duration
     BackwardLoop,   // Play backward continuously until stopped
@@ -83,6 +83,7 @@ impl TimelineSession {
         self.binded_targets = binded;
     }
 
+
     /// The `play` function always starts at time `0` (but can depend on the start of `TimelinePlayOption`)
     pub fn play(&mut self, option:TimelinePlayOption) {
         self.progress = 0.;
@@ -117,7 +118,7 @@ impl TimelineSession {
     pub fn is_playing(&self) -> bool {
         match self.playback {
             TimelinePlayback::Pause(_) | TimelinePlayback::Stop => false,
-            _ => false
+            _ => true
         }
     }
 
@@ -207,7 +208,7 @@ impl TimelinePlayer {
     pub fn sessions_mut(&mut self) -> impl Iterator<Item=&mut TimelineSession> {
         self.sessions.iter_mut()
     }
-    
+
     /// Plays the animation with the given name and returns its state before playing.
     pub fn play(&mut self, name:&str, option:Option<TimelinePlayOption>) {
         if let Some( session_idx) = self.shortcut.get( name ) {

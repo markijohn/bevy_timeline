@@ -1,12 +1,52 @@
 use bevy::prelude::*;
-use bevy_timeline::{DefaultTransformSet, TimelineAnimation, TimelinePlayer, TimelinePlugin};
+use serde_json::Value;
+use bevy_timeline::{AnimatableValue, DefaultTransformSet, TimelineAnimation, TimelineError, TimelinePlayer, TimelinePlugin};
+
+#[derive(Default, Clone)]
+struct PointLightIntensity(f32);
+
+impl AnimatableValue for PointLightIntensity {
+    type Target = PointLight;
+
+    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
+        out.intensity = start.0.lerp( end.unwrap_or( Self(0.) ).0, s  );
+    }
+
+    fn from_value(value: &Value) -> std::result::Result<Self, TimelineError> {
+        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightIntensity must be f32"))? as _ ) )
+    }
+
+    fn to_value(&self) -> Value {
+        Value::from( self.0 )
+    }
+}
+
+#[derive(Default, Clone)]
+struct PointLightRadius(f32);
+
+impl AnimatableValue for PointLightRadius {
+    type Target = PointLight;
+
+    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
+        out.radius = start.0.lerp( end.unwrap_or( Self(0.) ).0, s  );
+    }
+
+    fn from_value(value: &Value) -> std::result::Result<Self, TimelineError> {
+        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightRadius must be f32"))? as _ ) )
+    }
+
+    fn to_value(&self) -> Value {
+        Value::from( self.0 )
+    }
+}
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-        .add_plugins(TimelinePlugin::<
-            DefaultTransformSet
-        >::new())
+        .add_plugins(TimelinePlugin::< (
+            DefaultTransformSet,
+            // (PointLightIntensity, PointLightRadius)
+        )>::new())
         .add_systems(Startup, setup)
         .run();
 }
@@ -28,11 +68,13 @@ fn setup(
     ));
     
     // cube
+    let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#BasicTest") );
+    player.play("BasicTest", None);
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(2.0, 2.0, 2.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
         Transform::from_xyz(0.0, 0.5, 0.0),
-        TimelinePlayer::new().create_session( asset_server.load("basic.json#BasciTest") ),
+        player,
     ));
     
     // light

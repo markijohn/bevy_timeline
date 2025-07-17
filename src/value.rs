@@ -71,7 +71,7 @@ pub trait AnimatableValue:Default+Clone+Sized+'static {
 
     fn to_value(&self) -> Value;
 
-    fn craete_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
+    fn create_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
         // let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
         // let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
         // let data = Self::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;

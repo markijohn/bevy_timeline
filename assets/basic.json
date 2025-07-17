@@ -11,5 +11,19 @@
         ]
       }
     ]
+  },
+
+  {
+    "name": "AnotherTest",
+    "duration" : 3.0,
+    "targets" : [
+      {
+        "typ" : "Translation",
+        "target" : ["_self"],
+        "keyframes" : [
+          {"time": 0.0,"data": [0.0, 0.0, 0.0]}, {"time": 1.0, "data": [2.0, 0.0, 0.0]}
+        ]
+      }
+    ]
   }
 ]

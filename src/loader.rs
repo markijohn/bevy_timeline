@@ -45,7 +45,7 @@ impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets 
                 load_context.add_loaded_labeled_asset(anim.name.clone(), LoadedAsset::from(anim))
             );
         });
-        println!("{:?}", anim_sets);
+        println!("AnimSets : {:?}", anim_sets);
         Ok( TimelineAnimationSet(anim_sets) )
     }
 
