@@ -1,10 +1,12 @@
 # bevy_timeline
-Implementing Animation in the Bevy Engine (Experimental)
+Implementing animation in the Bevy Engine (Experimental)
+
+**DON'T USE THIS CRATE AS PRODUCTION**
 
 ## Features
-- [X] Keyframe animation
+- [X] Keyframe animation for default transform
 - [X] Custom keyframe animation
-- 
+- [ ] Remove unsafe
 
 ## Assets attribution
 This project uses resources from the following sources:

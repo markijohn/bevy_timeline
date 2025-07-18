@@ -31,15 +31,16 @@ thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-bevy = { version = "0.16.0", default-features = false, features = [
-    "std",
-    "x11",
-    "bevy_winit",
-    "bevy_state",
-    "bevy_window",
-    "bevy_pbr",
-    "bevy_core_pipeline",
-] }
+bevy = { version = "0.16.1"}
+#bevy = { version = "0.16.0", default-features = false, features = [
+#    "std",
+#    "x11",
+#    "bevy_winit",
+#    "bevy_state",
+#    "bevy_window",
+#    "bevy_pbr",
+#    "bevy_core_pipeline",
+#] }
 egui_dock = "0.16"
 bevy_math = { version = "0.16.0", features = ["mint"] }
 transform-gizmo-egui = "0.5"

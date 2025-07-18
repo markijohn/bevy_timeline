@@ -2,52 +2,6 @@ use bevy::prelude::*;
 use serde_json::Value;
 use bevy_timeline::{AnimatableValue, DefaultTransformSet, TimelineAnimation, TimelineError, TimelinePlayOption, TimelinePlayback, TimelinePlayer, TimelinePlugin};
 
-#[derive(Default, Clone)]
-struct PointLightIntensity(f32);
-
-impl AnimatableValue for PointLightIntensity {
-    type Target = PointLight;
-
-    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
-        out.intensity = start.0.lerp( end.unwrap_or( Self(0.) ).0, s  );
-    }
-
-    fn from_value(value: &Value) -> std::result::Result<Self, TimelineError> {
-        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightIntensity must be f32"))? as _ ) )
-    }
-
-    fn to_value(&self) -> Value {
-        Value::from( self.0 )
-    }
-
-    fn typ() -> &'static str {
-        "PointLightIntensity"
-    }
-}
-
-#[derive(Default, Clone)]
-struct PointLightRadius(f32);
-
-impl AnimatableValue for PointLightRadius {
-    type Target = PointLight;
-
-    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
-        out.radius = start.0.lerp( end.unwrap_or( Self(0.) ).0, s  );
-    }
-
-    fn from_value(value: &Value) -> std::result::Result<Self, TimelineError> {
-        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightRadius must be f32"))? as _ ) )
-    }
-
-    fn to_value(&self) -> Value {
-        Value::from( self.0 )
-    }
-
-    fn typ() -> &'static str {
-        "PointLightRadius"
-    }
-}
-
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
@@ -86,20 +40,20 @@ fn setup(
     ));
     
     // light
-    // let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#PointLightAnim") );
-    // player.play("PointLightAnim", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
-    // commands.spawn((
-    //     PointLight {
-    //         shadows_enabled: true,
-    //         ..default()
-    //     },
-    //     Transform::from_xyz(4.0, 8.0, 4.0),
-    //     player,
-    // ));
-    
+    let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#PointLightAnim") );
+    player.play("PointLightAnim", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
+    commands.spawn((
+        PointLight {
+            shadows_enabled: true,
+            ..default()
+        },
+        Transform::from_xyz(4.0, 8.0, 4.0),
+        player,
+    ));
+
     // camera
     commands.spawn((
         Camera3d::default(),
-        Transform::from_xyz(0., 2.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
+        Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 }

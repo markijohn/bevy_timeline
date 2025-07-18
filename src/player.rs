@@ -273,7 +273,6 @@ impl TimelinePlayer {
     }
 
     pub fn update_time(&mut self, time:f32) {
-        println!("{time}");
         self.sessions_mut().for_each(|session| session.update_time(time) );
     }
 }

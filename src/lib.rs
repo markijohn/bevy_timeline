@@ -23,6 +23,7 @@ mod player;
 mod value;
 mod loader;
 mod data;
+mod sample_human;
 
 use std::any::TypeId;
 use std::borrow::Cow;
@@ -351,7 +352,7 @@ macro_rules! impl_animatable_set {
                             for binded_target in session.get_entities::<$T>() {
                                 if let Ok(out) = outputs.get_mut(binded_target.entity) {
                                     if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$T>() {
-                                        println!("interpol {} {} {}", session.duration, session.prev_progress, session.progress);
+                                        //println!("interpol {} {} {}", session.duration, session.prev_progress, session.progress);
                                         $T::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, keyframes, out);
                                     }
                                 }
