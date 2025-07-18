@@ -86,16 +86,16 @@ fn setup(
     ));
     
     // light
-    let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#PointLightAnim") );
-    player.play("PointLightAnim", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
-    commands.spawn((
-        PointLight {
-            shadows_enabled: true,
-            ..default()
-        },
-        Transform::from_xyz(4.0, 8.0, 4.0),
-        player,
-    ));
+    // let mut player = TimelinePlayer::new().create_session( asset_server.load("basic.json#PointLightAnim") );
+    // player.play("PointLightAnim", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
+    // commands.spawn((
+    //     PointLight {
+    //         shadows_enabled: true,
+    //         ..default()
+    //     },
+    //     Transform::from_xyz(4.0, 8.0, 4.0),
+    //     player,
+    // ));
     
     // camera
     commands.spawn((
