@@ -23,11 +23,8 @@ mod player;
 mod value;
 mod loader;
 mod data;
-mod sample_human;
 
-use std::any::TypeId;
 use std::borrow::Cow;
-use std::collections::HashMap;
 pub use value::{AnimatableValue, Scale, Rotation, Translation};
 pub use player::{TimelinePlayer, TimelineSession, TimelinePlayback, TimelinePlayOption};
 

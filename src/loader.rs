@@ -39,31 +39,15 @@ impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets 
         let anims = TimelineAnimation::load_animations::<K>( &value )?;
         let mut anim_sets = Vec::with_capacity(anims.len());
         
-        
         anims.into_iter().for_each( |anim| {
             anim_sets.push(
                 load_context.add_loaded_labeled_asset(anim.name.clone(), LoadedAsset::from(anim))
             );
         });
-        println!("AnimSets : {:?}", anim_sets);
         Ok( TimelineAnimationSet(anim_sets) )
     }
 
     fn extensions(&self) -> &[&str] {
         &["json"]
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use std::str::FromStr;
-    use crate::{DefaultTransformSet, TimelineAnimation};
-
-    #[test]
-    fn load_test() {
-        let string = std::fs::read_to_string( "assets/basic.json" ).unwrap();
-        let value = serde_json::Value::from_str(&string).unwrap();
-        let anims = TimelineAnimation::load_animations::< DefaultTransformSet >( &value ).unwrap();
-        println!("{:?}", anims);
     }
 }

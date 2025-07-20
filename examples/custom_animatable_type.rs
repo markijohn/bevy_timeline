@@ -1,6 +1,4 @@
-use std::borrow::Cow;
 use bevy::prelude::*;
-use bevy_math::VectorSpace;
 use serde_json::Value;
 use bevy_timeline::{AnimatableValue, DefaultTransformSet, TimelineError, TimelinePlayOption, TimelinePlayback, TimelinePlayer, TimelinePlugin};
 
@@ -78,8 +76,8 @@ fn setup(
     ));
 
     // cube
-    let mut player = TimelinePlayer::new().create_session( asset_server.load("custom.json#BasicTest") );
-    player.play("BasicTest", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
+    let mut player = TimelinePlayer::new().create_session( asset_server.load("custom.json#BasicTransform") );
+    player.play("BasicTransform", TimelinePlayOption::new().set_playback(TimelinePlayback::ForwardLoop) );
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(2.0, 2.0, 2.0))),
         MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),

@@ -1,6 +1,6 @@
 [
   {
-    "name": "BasicTest",
+    "name": "BasicTransform",
     "duration" : 5.0,
     "targets" : [
       {
@@ -22,20 +22,20 @@
 
   {
     "name": "PointLightAnim",
-    "duration" : 4.0,
+    "duration" : 5.0,
     "targets" : [
       {
         "typ" : "PointLightIntensity",
         "target" : ["_self"],
         "keyframes" : [
-          {"time": 0.0,"data": 450.0}, {"time": 4.0, "data": 1000000.0}
+          {"time": 0.0,"data": 450.0}, {"time": 4.0, "data": 1000000.0}, {"time": 5.0, "data": 1500000.0}
         ]
       },
       {
         "typ" : "PointLightRadius",
         "target" : ["_self"],
         "keyframes" : [
-          {"time": 0.0,"data": 0.0}, {"time": 4.0, "data": 50.0}
+          {"time": 0.0,"data": 0.0}, {"time": 4.0, "data": 50.0}, {"time": 5.0, "data": 120.0}
         ]
       }
     ]

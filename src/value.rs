@@ -153,7 +153,7 @@ impl AnimatableValue for Rotation {
     fn from_value(value: &Value) -> Result<Self, TimelineError> {
         let values = value.as_array().ok_or( TimelineError::IncorrectValueType("`Rotation` keyframe must be [f32;3] array") )?;
         if values.len() != 4 {
-            return Err( TimelineError::IncorrectValueType("`Rotation` keyframe must be [f32;3] array") );
+            return Err( TimelineError::IncorrectValueType("`Rotation` keyframe must be [f32;4] array") );
         }
 
         Ok( Self(Quat::from_array([
