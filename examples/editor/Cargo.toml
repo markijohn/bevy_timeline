@@ -1,0 +1,16 @@
+[package]
+name = "bevy_timeline"
+authors = ["markijohn"]
+version = "0.1.0"
+edition = "2024"
+categories = ["rendering"]
+description = "Bevy Animation library"
+exclude = [".idea"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/markijohn/bevy_timeline"
+keywords = ["bevy"]
+
+[dependencies]
+bevy = { version = "0.16.1"}
+bevy_egui = { version = "0.35.1"}
+bevy_timeline = { path="../.." }
