@@ -1,0 +1,45 @@
+[package]
+name = "bevy_timeline_runtime"
+authors = ["markijohn"]
+version = "0.1.0"
+edition = "2024"
+categories = ["rendering"]
+description = "Bevy Animation library"
+exclude = [".idea"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/markijohn/bevy_timeline"
+keywords = ["bevy", "animation"]
+
+[dependencies]
+bevy_app = { version = "0.16.0" }
+bevy_transform = { version = "0.16.0" }
+bevy_asset = { version = "0.16.0" }
+bevy_color = { version = "0.16.0" }
+bevy_ecs = { version = "0.16.0" }
+bevy_log = { version = "0.16.0" }
+bevy_math = { version = "0.16.0" }
+bevy_reflect = { version = "0.16.0" }
+bevy_state = { version = "0.16.0" }
+bevy_time = { version = "0.16.0" }
+bevy_utils = { version = "0.16.0" }
+bevy_window = { version = "0.16.0" }
+bevy_render = { version = "0.16.0", optional = true }
+bevy_pbr = { version = "0.16.0", optional = true }
+serde_json = { version = "1"}
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+bevy = { version = "0.16.1"}
+#bevy = { version = "0.16.0", default-features = false, features = [
+#    "std",
+#    "x11",
+#    "bevy_winit",
+#    "bevy_state",
+#    "bevy_window",
+#    "bevy_pbr",
+#    "bevy_core_pipeline",
+#] }
+egui_dock = "0.16"
+bevy_math = { version = "0.16.0", features = ["mint"] }
+transform-gizmo-egui = "0.5"

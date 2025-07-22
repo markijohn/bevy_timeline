@@ -1,18 +1,127 @@
-use std::any::TypeId;
-use std::borrow::Cow;
+
+
 use bevy_ecs::change_detection::Mut;
 use bevy_ecs::component::{ComponentMutability, Mutable};
-use bevy_ecs::entity::Entity;
 use bevy_reflect::TypePath;
-use bevy_ecs::prelude::{Component, Query};
+use bevy_ecs::prelude::{Component};
 use bevy_ecs::query::QueryData;
 use bevy_math::{Vec3, Quat};
 use bevy_transform::prelude::{Transform};
 
-use serde_json::{json,Value};
-use crate::{TimelineError, TimelinePlayer};
+use crate::{TimelineError};
 use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
-use crate::player::TimelinePlayback;
+
+#[cfg(feature="json")]
+mod json {
+    use serde_json::{json,Value};
+}
+
+#[cfg(not(feature="json"))]
+mod ron {
+    use std::ops::Deref;
+    use bevy_asset::ron::Value;
+    use crate::TimelineError;
+
+    pub struct Var(Value);
+
+    impl TryFrom<&Var> for bool {
+        type Error = TimelineError;
+
+        fn try_from(value: &Var) -> Result<Self, Self::Error> {
+
+            match value.0 {
+                Value::Bool(v) => Ok(v),
+                _ => Err(TimelineError::IncorrectValueType("not bool"))
+            }
+        }
+    }
+
+    impl TryFrom<&Var> for char {
+        type Error = TimelineError;
+
+        fn try_from(value: &Var) -> Result<Self, Self::Error> {
+            match value.0 {
+                Value::Char(v) => Ok(v),
+                _ => Err(TimelineError::IncorrectValueType("not char"))
+            }
+        }
+    }
+
+    impl TryFrom<&Var> for String {
+        type Error = TimelineError;
+
+        fn try_from(value: &Var) -> Result<Self, Self::Error> {
+            match value.0 {
+                Value::String(ref v) => Ok(v.clone()),
+                _ => Err(TimelineError::IncorrectValueType("not string"))
+            }
+        }
+    }
+
+
+    impl Var {
+        pub fn as_to<T:TryFrom<&Var>>(&self) -> Result<T, TimelineError> {
+            T::from(self)
+        }
+
+        pub fn get<K:AsRef<str>, T:TryFrom<&Var>>(&self, key:K) -> Result<T, TimelineError> {
+            match self.0 {
+                Value::Map(ref m) => {
+                    if let Some(v) = m.deref().get(key.as_ref()) {
+                        Ok( v.as_to::<T>() )
+                    } else {
+                        Err(TimelineError::IncorrectValueType(""))
+                    }
+                }
+                _ => Err(TimelineError::IncorrectValueType("not object"))
+            }
+        }
+
+        pub fn get_option<K:AsRef<str>, T:TryFrom<&Var>>(&self, key:K) -> Result<Option<T>, TimelineError> {
+            match self.0 {
+                Value::Map(ref m) => {
+                    if let Some(v) = m.deref().get(key.as_ref()) {
+                        Ok( Some(v.as_to::<T>()) )
+                    } else {
+                        Ok(None)
+                    }
+                }
+                _ => Err(TimelineError::IncorrectValueType("not object"))
+            }
+        }
+
+        pub fn get_fixed_array<K:AsRef<str>,T:TryFrom<&Var>+Sized, const SIZE:usize>(&self, key:K) -> Result< [T;SIZE], TimelineError> {
+            match self.0 {
+                Value::Seq(ref v) => {
+                    if v.len() != SIZE {
+                        return Err( TimelineError::IncorrectValueType("array length is not ") )
+                    }
+                    let mut list = [T;SIZE];
+                    for (i,v) in v.iter().enumerate() {
+                        list[i] = T::try_from( &Var(v.clone()) )?;
+                    }
+                    Ok(list)
+                },
+                _ => Err(TimelineError::IncorrectValueType("not array"))
+            }
+        }
+
+        pub fn get_array<K:AsRef<str>,T:TryFrom<&Var>>(&self, key:K) -> Result<Vec<T>, TimelineError> {
+            match self.0 {
+                Value::Seq(ref v) => {
+                    let mut list = Vec::with_capacity(v.len());
+                    for v in v {
+                        list.push( T::try_from( &Var(v.clone()) )? );
+                    }
+                    Ok(list)
+                },
+                _ => Err(TimelineError::IncorrectValueType("not array"))
+            }
+        }
+    }
+}
+
+
 
 pub trait AnimatableValue:Default+Clone+Sized+'static {
     type Target: Component<Mutability=Mutable>;
