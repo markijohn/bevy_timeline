@@ -60,53 +60,27 @@ mod ron {
 
 
     impl Var {
-        pub fn as_to<T:TryFrom<&Var>>(&self) -> Result<T, TimelineError> {
-            T::from(self)
+        pub fn as_to<T:for<'a> TryFrom<&'a Var,Error=TimelineError>>(&self) -> Result<T, TimelineError> {
+            T::try_from(self)
         }
 
-        pub fn get<K:AsRef<str>, T:TryFrom<&Var>>(&self, key:K) -> Result<T, TimelineError> {
+        pub fn get<T:for<'a> TryFrom<&'a Var,Error=TimelineError>>(&self, key:&'static str) -> Result<T, TimelineError> {
             match self.0 {
                 Value::Map(ref m) => {
-                    if let Some(v) = m.deref().get(key.as_ref()) {
-                        Ok( v.as_to::<T>() )
-                    } else {
-                        Err(TimelineError::IncorrectValueType(""))
+                    for (k,v) in m.iter() {
+                        if let Value::String( s) = k {
+                            if s == key {
+                                return T::try_from( &Var(v.clone()) )
+                            }
+                        }
                     }
+                    Err(TimelineError::ItemNotExist(key))
                 }
-                _ => Err(TimelineError::IncorrectValueType("not object"))
+                _ => Err(TimelineError::IncorrectValueType("not map"))
             }
         }
 
-        pub fn get_option<K:AsRef<str>, T:TryFrom<&Var>>(&self, key:K) -> Result<Option<T>, TimelineError> {
-            match self.0 {
-                Value::Map(ref m) => {
-                    if let Some(v) = m.deref().get(key.as_ref()) {
-                        Ok( Some(v.as_to::<T>()) )
-                    } else {
-                        Ok(None)
-                    }
-                }
-                _ => Err(TimelineError::IncorrectValueType("not object"))
-            }
-        }
-
-        pub fn get_fixed_array<K:AsRef<str>,T:TryFrom<&Var>+Sized, const SIZE:usize>(&self, key:K) -> Result< [T;SIZE], TimelineError> {
-            match self.0 {
-                Value::Seq(ref v) => {
-                    if v.len() != SIZE {
-                        return Err( TimelineError::IncorrectValueType("array length is not ") )
-                    }
-                    let mut list = [T;SIZE];
-                    for (i,v) in v.iter().enumerate() {
-                        list[i] = T::try_from( &Var(v.clone()) )?;
-                    }
-                    Ok(list)
-                },
-                _ => Err(TimelineError::IncorrectValueType("not array"))
-            }
-        }
-
-        pub fn get_array<K:AsRef<str>,T:TryFrom<&Var>>(&self, key:K) -> Result<Vec<T>, TimelineError> {
+        pub fn get_array<K:AsRef<str>,T:for<'a> TryFrom<&'a Var,Error=TimelineError>>(&self, key:K) -> Result<Vec<T>, TimelineError> {
             match self.0 {
                 Value::Seq(ref v) => {
                     let mut list = Vec::with_capacity(v.len());
@@ -176,7 +150,7 @@ pub trait AnimatableValue:Default+Clone+Sized+'static {
     
     fn interpolate(s:f32, start:Self, end:Option<Self>, out:&mut Self::Target);
 
-    fn from_value(value:&Value) -> Result<Self, TimelineError>;
+    fn from_value(value:&Var) -> Result<Self, TimelineError>;
 
     fn to_value(&self) -> Value;
 

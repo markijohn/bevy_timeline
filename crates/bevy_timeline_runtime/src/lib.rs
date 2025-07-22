@@ -54,10 +54,18 @@ pub enum TimelineError {
     Io(#[from] std::io::Error),
 
     /// [JSON Error](serde_json::error::Error)
+    #[cfg(feature="json")]
     #[error("Could not parse the JSON: {0}")]
-    JsonError(#[from] serde_json::error::Error),
+    FormatError(#[from] serde_json::error::Error),
 
-    #[error("Json value type is incorrect: {0}")]
+    #[cfg(not(feature="json"))]
+    #[error("Could not parse the RON: {0}")]
+    FormatError(#[from] bevy_asset::ron::Error),
+
+    #[error("value type is incorrect: {0}")]
+    ItemNotExist(&'static str),
+
+    #[error("value type is incorrect: {0}")]
     IncorrectValueType(&'static str),
 
     #[error("TimelineTarget cast failed(type not match) : {request} -> {actual}")]
