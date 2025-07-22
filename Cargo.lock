@@ -1283,6 +1283,7 @@ dependencies = [
  "bevy_math",
  "bevy_timeline_runtime",
  "bevy_transform",
+ "serde_json",
 ]
 
 [[package]]

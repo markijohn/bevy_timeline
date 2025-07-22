@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use serde_json::Value;
-use bevy_timeline::{AnimatableValue, DefaultTransformSet, TimelineError, TimelinePlayOption, TimelinePlayback, TimelinePlayer, TimelinePlugin};
+use bevy_timeline_runtime::{AnimatableValue, DefaultTransformSet, TimelineError, TimelinePlayOption, TimelinePlayback, TimelinePlayer, TimelinePlugin};
 
 
 #[derive(Default, Clone)]

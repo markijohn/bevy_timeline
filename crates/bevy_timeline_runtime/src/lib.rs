@@ -57,11 +57,21 @@ pub enum TimelineError {
     #[error("Could not parse the JSON: {0}")]
     JsonError(#[from] serde_json::error::Error),
 
+    
+    
+    
+    #[error("Could not find item: {0}")]
+    NotExistItem(&'static str),
+
+    #[error("array length not match(required:{required}) but {actual}")]
+    InvalidLength{required:usize, actual:usize},
+
     #[error("Json value type is incorrect: {0}")]
     IncorrectValueType(&'static str),
 
     #[error("TimelineTarget cast failed(type not match) : {request} -> {actual}")]
     TypeNotMatch{ request:&'static str, actual:&'static str },
+    
 
     #[error("Unknown TimelineTarget type : {0}")]
     UnknownTargetType(String),
