@@ -20,10 +20,6 @@ impl AnimatableValue for PointLightIntensity {
     fn to_value(&self) -> Value {
         Value::from( self.0 )
     }
-
-    fn typ() -> &'static str {
-        "PointLightIntensity"
-    }
 }
 
 #[derive(Default, Clone)]
@@ -42,10 +38,6 @@ impl AnimatableValue for PointLightRadius {
 
     fn to_value(&self) -> Value {
         Value::from( self.0 )
-    }
-
-    fn typ() -> &'static str {
-        "PointLightRadius"
     }
 }
 

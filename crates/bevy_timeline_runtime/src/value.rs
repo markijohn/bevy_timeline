@@ -8,6 +8,83 @@ use crate::{TimelineError};
 use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
 
 
+pub trait ValueExt {
+    fn as_f32(&self) -> Result<f32, TimelineError>;
+    fn as_fixed_array_f32<const SIZE:usize>(&self) -> Result<[f32;SIZE], TimelineError>;
+    fn as_array_f32(&self) -> Result<Vec<f32>, TimelineError>;
+
+    fn child(&self, key:&'static str) -> Option<&Self>;
+
+    fn get_f32(&self, key:&'static str) -> Result<f32, TimelineError> {
+        if let Some(child) = self.child(key) {
+            child.as_f32()
+        } else {
+            Err(TimelineError::NotExistItem(key))
+        }
+    }
+
+    fn get_fixed_array_f32<const SIZE:usize>(&self, key:&'static str) -> Result<[f32;SIZE], TimelineError> {
+        if let Some(v) = self.child(key) {
+            v.as_fixed_array_f32::<SIZE>()
+        } else {
+            Err(TimelineError::NotExistItem(key))
+        }
+    }
+
+    fn get_array_f32(&self, key:&'static str) -> Result<Vec<f32>, TimelineError> {
+        if let Some(v) = self.child(key) {
+            v.as_array_f32()
+        } else {
+            Err(TimelineError::NotExistItem(key))
+        }
+    }
+}
+
+impl ValueExt for Value {
+    fn as_f32(&self) -> Result<f32, TimelineError> {
+        Ok(
+            self.as_f64().ok_or( TimelineError::IncorrectValueType("not a number") )? as f32
+        )
+    }
+
+    fn as_fixed_array_f32<const SIZE: usize>(&self) -> Result<[f32; SIZE], TimelineError> {
+
+        if let Value::Array(vec) = self {
+            if vec.len() != SIZE {
+                return Err(TimelineError::InvalidLength {required:SIZE, actual: vec.len()});
+            }
+            let mut v = [0f32;SIZE];
+            for i in 0..SIZE {
+                v[i] = vec[i].as_f32()?;
+            }
+            Ok(v)
+        } else {
+            Err(TimelineError::IncorrectValueType("not array"))
+        }
+    }
+
+    fn as_array_f32(&self) -> Result<Vec<f32>, TimelineError> {
+        if let Value::Array(vec) = self {
+            let mut v = Vec::with_capacity(vec.len());
+            for i in vec {
+                v.push(i.as_f32()?);
+            }
+            Ok(v)
+        } else {
+            Err(TimelineError::IncorrectValueType("not array"))
+        }
+    }
+
+    fn child(&self, key: &'static str) -> Option<&Self> {
+        if let Value::Object(map) = self {
+            map.get(key)
+        } else {
+            None
+        }
+    }
+
+}
+
 pub trait AnimatableValue:Default+Clone+Sized+'static {
     type Target: Component<Mutability=Mutable>;
     
@@ -90,7 +167,19 @@ pub trait AnimatableValue:Default+Clone+Sized+'static {
     }
 
     fn typ() -> &'static str {
-        std::any::type_name::<Self>()
+        //std::any::type_name::<Self>()
+        let full_name = std::any::type_name::<Self>();
+        let name = if let Some(pos) = full_name.rfind("::") {
+            &full_name[pos + 2..]
+        } else {
+            full_name
+        };
+
+        if let Some(pos) = name.find('<') {
+            &name[..pos]
+        } else {
+            &name
+        }
     }
 }
 
