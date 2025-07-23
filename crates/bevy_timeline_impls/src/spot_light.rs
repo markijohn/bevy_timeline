@@ -1,9 +1,11 @@
 use bevy_color::{Color, Mix};
 use bevy_math::FloatExt;
-use bevy_timeline_runtime::{AnimatableValue, TimelineError};
+use bevy_timeline_runtime::prelude::{ValueExt, AnimatableValue, TimelineError};
 use serde_json::{Value};
 
 use bevy_pbr::SpotLight;
+
+pub type SpotLightSet = (SpotLightColor, SpotLightIntensity, SpotLightRange, SpotLightRadius);
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SpotLightColor(Color);
@@ -32,7 +34,7 @@ impl AnimatableValue for SpotLightColor {
 
 
 #[derive(Default, Clone)]
-struct SpotLightIntensity(f32);
+pub struct SpotLightIntensity(f32);
 
 impl AnimatableValue for SpotLightIntensity {
     type Target = SpotLight;
@@ -51,7 +53,7 @@ impl AnimatableValue for SpotLightIntensity {
 }
 
 #[derive(Default, Clone)]
-struct SpotLightRange(f32);
+pub struct SpotLightRange(f32);
 
 impl AnimatableValue for SpotLightRange {
     type Target = SpotLight;
@@ -61,7 +63,7 @@ impl AnimatableValue for SpotLightRange {
     }
 
     fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightRadius must be f32"))? as _ ) )
+        Ok( Self( value.as_f32()? ) )
     }
 
     fn to_value(&self) -> Value {
@@ -70,7 +72,7 @@ impl AnimatableValue for SpotLightRange {
 }
 
 #[derive(Default, Clone)]
-struct SpotLightRadius(f32);
+pub struct SpotLightRadius(f32);
 
 impl AnimatableValue for SpotLightRadius {
     type Target = SpotLight;

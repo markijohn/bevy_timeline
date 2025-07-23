@@ -1272,6 +1272,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "bevy_timeline_impls",
  "bevy_timeline_runtime",
 ]
 
@@ -1279,7 +1280,9 @@ dependencies = [
 name = "bevy_timeline_impls"
 version = "0.1.0"
 dependencies = [
+ "bevy_asset",
  "bevy_color",
+ "bevy_ecs",
  "bevy_math",
  "bevy_pbr",
  "bevy_timeline_runtime",

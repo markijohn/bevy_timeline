@@ -1,9 +1,11 @@
-use bevy_color::{Color, LinearRgba, Mix};
-use bevy_math::prelude::{Vec3, Quat, EaseFunction};
-use bevy_timeline_runtime::{AnimatableValue, TimelineError};
-use serde_json::{json, Value};
+use bevy_color::{Color, Mix};
+use bevy_math::FloatExt;
+use bevy_timeline_runtime::prelude::{ValueExt, AnimatableValue, TimelineError};
+use serde_json::{Value};
 
-use bevy_pbr::{DirectionalLight, PointLight};
+use bevy_pbr::{DirectionalLight};
+
+pub type DirLightSet = (DirLightColor, DirLightLumen);
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DirLightColor(Color);

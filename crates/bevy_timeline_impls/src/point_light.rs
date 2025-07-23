@@ -1,9 +1,11 @@
 use bevy_color::{Color, Mix};
 use bevy_math::FloatExt;
-use bevy_timeline_runtime::{AnimatableValue, TimelineError};
+use bevy_timeline_runtime::prelude::{ValueExt, AnimatableValue, TimelineError};
 use serde_json::{Value};
 
 use bevy_pbr::PointLight;
+
+pub type PointLightSet = (PointLightColor, PointLightIntensity, PointLightRadius);
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PointLightColor(Color);
@@ -32,7 +34,7 @@ impl AnimatableValue for PointLightColor {
 
 
 #[derive(Default, Clone)]
-struct PointLightIntensity(f32);
+pub struct PointLightIntensity(f32);
 
 impl AnimatableValue for PointLightIntensity {
     type Target = PointLight;
@@ -51,7 +53,7 @@ impl AnimatableValue for PointLightIntensity {
 }
 
 #[derive(Default, Clone)]
-struct PointLightRadius(f32);
+pub struct PointLightRadius(f32);
 
 impl AnimatableValue for PointLightRadius {
     type Target = PointLight;

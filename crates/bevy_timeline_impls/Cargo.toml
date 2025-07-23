@@ -11,10 +11,12 @@ repository = "https://github.com/markijohn/bevy_timeline"
 keywords = ["bevy", "animation"]
 
 [dependencies]
-bevy_timeline_runtime = { path= "../bevy_timeline_runtime" }
+bevy_asset = "0.16"
+bevy_ecs = "0.16"
 bevy_pbr = "0.16"
 bevy_transform = "0.16"
 bevy_color = { version = "0.16" }
 bevy_math = "0.16"
 serde = "1"
 serde_json = "1"
+bevy_timeline_runtime = { path= "../bevy_timeline_runtime" }

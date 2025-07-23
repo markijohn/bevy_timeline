@@ -25,26 +25,31 @@ mod loader;
 mod data;
 
 use std::borrow::Cow;
-pub use value::{AnimatableValue, Scale, Rotation, Translation};
-pub use player::{TimelinePlayer, TimelineSession, TimelinePlayback, TimelinePlayOption};
+
+use value::{AnimatableValue, Scale, Rotation, Translation};
+use player::{TimelinePlayer};
 
 use std::marker::PhantomData;
 use bevy_app::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_time::Time;
-use bevy_transform::prelude::*;
 use bevy_asset::prelude::*;
-use bevy_ecs::component::{ComponentMutability, Mutable};
-use bevy_ecs::query::QueryData;
-use bevy_reflect::TypePath;
-use serde::Deserialize;
+use bevy_ecs::component::{Mutable};
 use serde_json::Value;
 use thiserror::Error;
-pub use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes, TimelineUntypedTarget};
+use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes};
 use crate::loader::TimelineAnimationSetLoader;
 use crate::player::TimelineTargetBinded;
 
 pub type DefaultTransformSet = (Scale, Rotation, Translation);
+
+pub mod prelude {
+    pub use crate::{TimelinePlugin, TimelineError, AnimatableSet, TimelineImplSets};
+    pub use crate::DefaultTransformSet;
+    pub use crate::player::{TimelinePlayer, TimelineSession, TimelinePlayback, TimelinePlayOption};
+    pub use crate::value::{AnimatableValue,ValueExt};
+    pub use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes, TimelineUntypedTarget};
+}
 
 #[non_exhaustive]
 #[derive(Debug, Error)]
@@ -57,8 +62,6 @@ pub enum TimelineError {
     #[error("Could not parse the JSON: {0}")]
     JsonError(#[from] serde_json::error::Error),
 
-    
-    
     
     #[error("Could not find item: {0}")]
     NotExistItem(&'static str),
@@ -332,10 +335,10 @@ pub trait AnimatableSet where Self: 'static {
 
 
 macro_rules! impl_animatable_set {
-    ( $F:ident, $($T:ident),+ ) => {
-        impl<$F, $($T),+> AnimatableSet for ($F, $($T,)+)
+    ( $F:ident, $($T:ident),* ) => {
+        impl<$F, $($T),*> AnimatableSet for ($F, $($T,)*)
         where
-            $F:AnimatableValue, $($T: AnimatableValue<Target=$F::Target>,)+
+            $F:AnimatableValue, $($T: AnimatableValue<Target=$F::Target>,)*
         {
             type Target = $F::Target;
 
@@ -364,7 +367,7 @@ macro_rules! impl_animatable_set {
                                     }
                                 }
                             }
-                            )+
+                            )*
                         }
                     }
                 }
@@ -378,7 +381,7 @@ macro_rules! impl_animatable_set {
                 if $T::typ() == typ {
                     return Some( $T::create_untyped_keyframes( value ) )
                 }
-                )+
+                )*
                 None
             }
 
@@ -386,7 +389,7 @@ macro_rules! impl_animatable_set {
     };
 }
 
-// impl_animatable_set!(T1);
+impl_animatable_set!(T1,);
 impl_animatable_set!(T1, T2);
 impl_animatable_set!(T1, T2, T3);
 impl_animatable_set!(T1, T2, T3, T4);

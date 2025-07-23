@@ -1,11 +1,12 @@
 use std::ops::Deref;
 use bevy_math::Curve;
 use bevy_math::prelude::{Vec3, Quat, EaseFunction};
-use bevy_timeline_runtime::{AnimatableValue, TimelineError};
+use bevy_timeline_runtime::prelude::{ValueExt, AnimatableValue, TimelineError};
 use serde_json::{json, Value};
 
 use bevy_transform::prelude::Transform;
 
+pub type TransformSet = (Scale, Rotation, Translation);
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct EaseFunctionWrap(EaseFunction);
