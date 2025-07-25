@@ -21,6 +21,9 @@ fn main() {
     .run();
 }
 
+#[derive(Resource)]
+pub struct AnimationData(Vec<TimelineAnimation>);
+
 /// Creates a colorful test pattern
 fn uv_debug_texture() -> Image {
     const TEXTURE_SIZE: usize = 8;

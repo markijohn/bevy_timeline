@@ -1,6 +1,7 @@
 use bevy_asset::Assets;
 use bevy_ecs::prelude::{Changed, Component, Query, ResMut};
 use bevy_color::{Color, Mix};
+use bevy_math::FloatExt;
 use serde_json::{Value};
 use bevy_timeline_runtime::prelude::{AnimatableValue, TimelineError};
 
@@ -70,6 +71,178 @@ impl AnimatableValue for StdMaterialColor {
         } else {
             out.base_color = Some(start.0);
         }
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialRoughness(pub f32);
+
+impl AnimatableValue for StdMaterialRoughness {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.perceptual_roughness = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialMetallic(pub f32);
+
+impl AnimatableValue for StdMaterialMetallic {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.metallic = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialReflectance(pub f32);
+
+impl AnimatableValue for StdMaterialReflectance {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.reflectance = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialThickness(pub f32);
+
+impl AnimatableValue for StdMaterialThickness {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.thickness = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialIor(pub f32);
+
+impl AnimatableValue for StdMaterialIor {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.ior = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialAttColor(pub Color);
+
+impl AnimatableValue for StdMaterialAttColor {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        if let Some(end) = end {
+            out.attenuation_color = Some(start.0.mix( &end.0, s ));
+        } else {
+            out.attenuation_color = Some(start.0);
+        }
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialClearCoat(pub f32);
+
+impl AnimatableValue for StdMaterialClearCoat {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.clearcoat = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
+    }
+
+    fn from_value(value: &Value) -> Result<Self, TimelineError> {
+        Ok( Self(
+            serde_json::from_value( value.clone() )?
+        ) )
+    }
+
+    fn to_value(&self) -> Value {
+        serde_json::to_value( self.0 ).unwrap()
+    }
+}
+
+#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StdMaterialClearCoatRough(pub f32);
+
+impl AnimatableValue for StdMaterialClearCoatRough {
+    type Target = MaterialController;
+
+    fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
+        out.clearcoat_perceptual_roughness = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
     }
 
     fn from_value(value: &Value) -> Result<Self, TimelineError> {

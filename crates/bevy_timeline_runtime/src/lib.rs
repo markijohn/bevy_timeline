@@ -287,8 +287,6 @@ impl_timeline_impl_sets!( T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13
 pub trait AnimatableSet where Self: 'static {
     type Target:Component<Mutability=Mutable>;
     fn add_system(app:&mut bevy_app::App) {
-        println!("Added system {:?}", std::any::type_name::<Self>() );
-
         app.add_systems( PostUpdate, Self::step.in_set(AnimationSystemSet::Animate) );
     }
 
