@@ -4,9 +4,7 @@ use bevy::prelude::*;
 use bevy::winit::WinitSettings;
 use bevy_egui::egui::{self, Frame, Pos2, Shape, Stroke, Color32, Rect, Vec2, FontId, Widget, Sense, PointerButton, PointerState, Id, Rangef, Align, StrokeKind, ScrollArea, Slider, UiBuilder, Ui, InnerResponse};
 use bevy_egui::{EguiContexts, EguiPlugin};
-use serde::Serialize;
-
-
+use bevy_timeline_runtime::prelude::TimelineAnimation;
 
 fn format_f32(value: f32) -> String {
     if value.fract() == 0.0 {
@@ -60,39 +58,11 @@ impl Default for TimelineEditorSettings {
     }
 }
 
-#[derive(Serialize, Clone,Default)]
-struct Keyframe {
-    #[serde(skip_serializing)]
-    selected : bool, // WARN : not serialized
-
-    time: f32,
-    x_t : Option<f32>,
-    y_t : Option<f32>,
-    z_t : Option<f32>,
-    x_r : Option<f32>,
-    y_r : Option<f32>,
-    z_r : Option<f32>,
-}
-
-impl Keyframe {
-    pub fn from_time(time:f32) -> Self {
-        Self {
-            time,
-            .. default()
-        }
-    }
-}
-
-struct Target {
-    name: String,
-    keyframes: Vec<Keyframe>,
-}
 
 #[derive(Resource,Default)]
 pub struct TimelineEditor {
     ui_settings: TimelineEditorSettings,
     time: f32,
-    targets: Vec<Target>,
     zoom: f32,
     scroll_offset_x: f32,
     scroll_offset_y: f32,
@@ -106,14 +76,13 @@ pub struct TimelineEditor {
 
 
 impl TimelineEditor {
-    fn new(targets: Vec<Target>) -> Self {
+    fn new() -> Self {
         let ui_settings = TimelineEditorSettings::default();
         let zoom = ui_settings.min_zoom;
         let target_name_width = ui_settings.default_target_name_width;
         Self {
             ui_settings,
             time: 0.,
-            targets,
             zoom,
             scroll_offset_x: 0.0,
             scroll_offset_y: 0.0,
@@ -126,7 +95,7 @@ impl TimelineEditor {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui) {
+    fn ui(&mut self, ui: &mut Ui, anim_set:(Handle<TimelineAnimation>,&TimelineAnimation) ) {
         let key_size = self.ui_settings.key_size;
         let max_target_name_width = self.ui_settings.max_target_name_width;
         let focus_time_pad_x = self.ui_settings.focus_time_pad_x;

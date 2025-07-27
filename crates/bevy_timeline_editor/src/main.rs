@@ -7,8 +7,11 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
+use bevy_egui::egui::Widget;
 use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
+
+mod editor;
 
 type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
 fn main() {
@@ -179,35 +182,45 @@ fn draw_egui(
         .min_height(30.)
         .max_height(30.0)
         .show(ctx_mut, |ui| {
-            ui.label("timeline_top_panel");
-        }).response.rect.height();
+            ui.horizontal(|ui| {
+                if ui.button("New").clicked() {
 
-    let mut bottom = egui::TopBottomPanel::bottom("timeline_bottom_panel")
-        .min_height(100.)
-        .max_height(1000.0)
-        .resizable(true)
-        .show(ctx_mut, |ui| {
-            if ui.button("Load").clicked() {
-                if let Some(files) = rfd::FileDialog::new().pick_files() {
-                    for file in files {
-                        let string = std::fs::read_to_string(file).unwrap();
-                        if let Ok(value) = serde_json::Value::from_str(&string) {
-                            if let Ok(anims) = TimelineAnimation::load_animations::<TimelineSet>( &value ) {
+                }
+                if ui.button("Load").clicked() {
+                    if let Some(files) = rfd::FileDialog::new().pick_files() {
+                        for file in files {
+                            let string = std::fs::read_to_string(file).unwrap();
+                            if let Ok(value) = serde_json::Value::from_str(&string) {
+                                if let Ok(anims) = TimelineAnimation::load_animations::<TimelineSet>( &value ) {
 
+                                } else {
+                                    error!("TimelineAnimation parse failed");
+                                }
                             } else {
-                                error!("TimelineAnimation parse failed");
+                                error!("json load error");
                             }
-                        } else {
-                            error!("json load error");
                         }
                     }
                 }
-            }
+            });
+
+        }).response.rect.height();
+
+    let mut bottom = egui::TopBottomPanel::bottom("timeline_bottom_panel")
+        .min_height(200.)
+        .max_height(1000.0)
+        .resizable(true)
+        .show(ctx_mut, |ui| {
+            ui.horizontal(|ui| {
+
+            });
+            egui::Separator::default().spacing(0.).ui( ui );
         }).response.rect.height();
 
     let mut left = egui::SidePanel::left("timeline_entities")
         .min_width(200.)
         .max_width(1000.)
+        .resizable(true)
         .show(ctx_mut, |ui| {
 
         }).response.rect.width();
