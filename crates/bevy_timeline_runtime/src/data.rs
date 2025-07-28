@@ -54,7 +54,7 @@ impl <T> TimelineKeyframe<T> where T:AnimatableValue {
     pub fn from(value:&Value) -> Result<TimelineKeyframe<T>, TimelineError>{
         let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
         let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
-        let data = T::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
+        let data = serde_json::from_value::<T>( keyframe["data"].clone() )?;
         Ok( TimelineKeyframe { time,data } )
     }
 }

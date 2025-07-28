@@ -1,9 +1,9 @@
 use bevy::prelude::*;
-use serde_json::Value;
+use serde::{Serialize,Deserialize};
 use bevy_timeline_runtime::prelude::*;
 
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct PointLightIntensity(f32);
 
 impl AnimatableValue for PointLightIntensity {
@@ -12,17 +12,9 @@ impl AnimatableValue for PointLightIntensity {
     fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
         out.intensity = start.0.lerp( end.unwrap_or( Self(0.) ).0, s  );
     }
-
-    fn from_value(value: &Value) -> std::result::Result<Self, TimelineError> {
-        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightIntensity must be f32"))? as _ ) )
-    }
-
-    fn to_value(&self) -> Value {
-        Value::from( self.0 )
-    }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 struct PointLightRadius(f32);
 
 impl AnimatableValue for PointLightRadius {
@@ -30,14 +22,6 @@ impl AnimatableValue for PointLightRadius {
 
     fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
         out.radius = start.0.lerp( end.unwrap_or( Self(0.) ).0, s  );
-    }
-
-    fn from_value(value: &Value) -> std::result::Result<Self, TimelineError> {
-        Ok( Self( value.as_f64().ok_or(TimelineError::IncorrectValueType("PointLightRadius must be f32"))? as _ ) )
-    }
-
-    fn to_value(&self) -> Value {
-        Value::from( self.0 )
     }
 }
 

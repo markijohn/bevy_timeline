@@ -3,6 +3,7 @@ use bevy_ecs::component::{Mutable};
 use bevy_ecs::prelude::{Component};
 use bevy_math::{Vec3, Quat};
 use bevy_transform::prelude::{Transform};
+use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use crate::{TimelineError};
 use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
@@ -85,7 +86,7 @@ impl ValueExt for Value {
 
 }
 
-pub trait AnimatableValue:Default+Clone+Sized+'static {
+pub trait AnimatableValue:Default+Clone+Sized+Serialize+for<'a> Deserialize<'a>+'static {
     type Target: Component<Mutability=Mutable>;
     
     /// TODO : fast keyframe search from cached(last searched index, last proceed time)
@@ -138,15 +139,7 @@ pub trait AnimatableValue:Default+Clone+Sized+'static {
     
     fn interpolate(s:f32, start:Self, end:Option<Self>, out:&mut Self::Target);
 
-    fn from_value(value:&Value) -> Result<Self, TimelineError>;
-
-    fn to_value(&self) -> Value;
-
     fn create_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
-        // let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
-        // let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
-        // let data = Self::from_value( keyframe.get("data").ok_or( TimelineError::IncorrectValueType("data(in keyframe) is not exist") )? )?;
-
         let mut keyframes = Vec::<TimelineKeyframe<Self>>::with_capacity( value.len() );
         for i in value {
             keyframes.push( TimelineKeyframe::<Self>::from(i)? );
@@ -175,15 +168,16 @@ pub trait AnimatableValue:Default+Clone+Sized+'static {
             full_name
         };
 
-        if let Some(pos) = name.find('<') {
-            &name[..pos]
-        } else {
-            &name
-        }
+        // if let Some(pos) = name.find('<') {
+        //     &name[..pos]
+        // } else {
+        //     &name
+        // }
+        name
     }
 }
 
-#[derive(Default,Clone)]
+#[derive(Serialize,Deserialize,Default,Clone)]
 pub struct Scale(Vec3);
 
 impl AnimatableValue for Scale {
@@ -196,30 +190,9 @@ impl AnimatableValue for Scale {
             out.scale = start.0;
         }
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        let values = value.as_array().ok_or( TimelineError::IncorrectValueType("`Scale` keyframe must be [f32;3] array") )?;
-        if values.len() != 3 {
-            return Err( TimelineError::IncorrectValueType("`Scale` keyframe must be [f32;3] array") );
-        }
-        Ok( Self(Vec3::from_array([
-            values[0].as_number().ok_or( TimelineError::IncorrectValueType("`Scale`[0] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[1].as_number().ok_or( TimelineError::IncorrectValueType("`Scale`[1] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[2].as_number().ok_or( TimelineError::IncorrectValueType("`Scale`[2] is not a number(float)") )?.as_f64().unwrap() as f32,
-        ])) )
-    }
-
-    fn to_value(&self) -> Value {
-        let scale = self.0;
-        Value::Array(vec![Value::from(scale.x), Value::from(scale.y), Value::from(scale.z)])
-    }
-
-    fn typ() -> &'static str {
-        "Scale"
-    }
 }
 
-#[derive(Default,Clone)]
+#[derive(Serialize,Deserialize,Default,Clone)]
 pub struct Rotation(Quat);
 
 impl AnimatableValue for Rotation {
@@ -232,33 +205,10 @@ impl AnimatableValue for Rotation {
             out.rotation = prev.0;
         }
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        let values = value.as_array().ok_or( TimelineError::IncorrectValueType("`Rotation` keyframe must be [f32;3] array") )?;
-        if values.len() != 4 {
-            return Err( TimelineError::IncorrectValueType("`Rotation` keyframe must be [f32;4] array") );
-        }
-
-        Ok( Self(Quat::from_array([
-            values[0].as_number().ok_or( TimelineError::IncorrectValueType("`Rotation`[0] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[1].as_number().ok_or( TimelineError::IncorrectValueType("`Rotation`[1] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[2].as_number().ok_or( TimelineError::IncorrectValueType("`Rotation`[2] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[3].as_number().ok_or( TimelineError::IncorrectValueType("`Rotation`[3] is not a number(float)") )?.as_f64().unwrap() as f32,
-        ])) )
-    }
-
-    fn to_value(&self) -> Value {
-        let rotation = self.0;
-        Value::Array(vec![Value::from(rotation.x), Value::from(rotation.y), Value::from(rotation.z), Value::from(rotation.w) ])
-    }
-
-    fn typ() -> &'static str {
-        "Rotation"
-    }
 }
 
 
-#[derive(Default,Clone)]
+#[derive(Serialize,Deserialize,Default,Clone)]
 pub struct Translation(Vec3);
 
 impl AnimatableValue for Translation {
@@ -267,31 +217,8 @@ impl AnimatableValue for Translation {
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         if let Some(end) = end {
             out.translation = start.0 + (end.0 - start.0) * s;
-            // println!("translation(0) {}", out.translation);
         } else {
             out.translation = start.0;
-            // println!("translation(1) {}", out.translation);
         }
-    }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        let values = value.as_array().ok_or( TimelineError::IncorrectValueType("`Translation` keyframe must be [f32;3] array") )?;
-        if values.len() != 3 {
-            return Err( TimelineError::IncorrectValueType("`Translation` keyframe must be [f32;3] array") );
-        }
-        Ok( Self(Vec3::from_array([
-            values[0].as_number().ok_or( TimelineError::IncorrectValueType("`Translation`[0] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[1].as_number().ok_or( TimelineError::IncorrectValueType("`Translation`[1] is not a number(float)") )?.as_f64().unwrap() as f32,
-            values[2].as_number().ok_or( TimelineError::IncorrectValueType("`Translation`[2] is not a number(float)") )?.as_f64().unwrap() as f32,
-        ])) )
-    }
-
-    fn to_value(&self) -> Value {
-        let translation = self.0;
-        Value::Array(vec![Value::from(translation.x), Value::from(translation.y), Value::from(translation.z)])
-    }
-
-    fn typ() -> &'static str {
-        "Translation"
     }
 }

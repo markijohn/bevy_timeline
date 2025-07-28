@@ -2,7 +2,7 @@ use bevy_asset::Assets;
 use bevy_ecs::prelude::{Changed, Component, Query, ResMut};
 use bevy_color::{Color, Mix};
 use bevy_math::FloatExt;
-use serde_json::{Value};
+use serde::{Serialize, Deserialize};
 use bevy_timeline_runtime::prelude::{AnimatableValue, TimelineError};
 
 use bevy_pbr::{MeshMaterial3d, StandardMaterial};
@@ -59,7 +59,7 @@ pub struct MaterialController {
     clearcoat_perceptual_roughness: Option<f32>,
 }
 
-#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct StdMaterialColor(pub Color);
 
 impl AnimatableValue for StdMaterialColor {
@@ -72,19 +72,9 @@ impl AnimatableValue for StdMaterialColor {
             out.base_color = Some(start.0);
         }
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
-    }
 }
 
-#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct StdMaterialRoughness(pub f32);
 
 impl AnimatableValue for StdMaterialRoughness {
@@ -93,19 +83,9 @@ impl AnimatableValue for StdMaterialRoughness {
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.perceptual_roughness = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
-    }
 }
 
-#[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct StdMaterialMetallic(pub f32);
 
 impl AnimatableValue for StdMaterialMetallic {
@@ -113,16 +93,6 @@ impl AnimatableValue for StdMaterialMetallic {
 
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.metallic = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
-    }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
     }
 }
 
@@ -135,16 +105,6 @@ impl AnimatableValue for StdMaterialReflectance {
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.reflectance = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
-    }
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
@@ -156,16 +116,6 @@ impl AnimatableValue for StdMaterialThickness {
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.thickness = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
-    }
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
@@ -176,16 +126,6 @@ impl AnimatableValue for StdMaterialIor {
 
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.ior = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
-    }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
     }
 }
 
@@ -202,16 +142,6 @@ impl AnimatableValue for StdMaterialAttColor {
             out.attenuation_color = Some(start.0);
         }
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
-    }
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
@@ -223,16 +153,6 @@ impl AnimatableValue for StdMaterialClearCoat {
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.clearcoat = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
     }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
-    }
 }
 
 #[derive(Default, Clone, serde::Serialize, serde::Deserialize)]
@@ -243,15 +163,5 @@ impl AnimatableValue for StdMaterialClearCoatRough {
 
     fn interpolate(s: f32, start:Self, end: Option<Self>, out: &mut Self::Target) {
         out.clearcoat_perceptual_roughness = Some( start.0.lerp( end.unwrap_or_default().0, s ) );
-    }
-
-    fn from_value(value: &Value) -> Result<Self, TimelineError> {
-        Ok( Self(
-            serde_json::from_value( value.clone() )?
-        ) )
-    }
-
-    fn to_value(&self) -> Value {
-        serde_json::to_value( self.0 ).unwrap()
     }
 }

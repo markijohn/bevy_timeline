@@ -1,26 +1,20 @@
 //! This is the crate that implements the animation of bevy.
 //! 
-//! It has nothing to do with the animations built into bevy.
+//! It has nothing to do with the animations system built into bevy.
 //!
 //! This project is in its early stages and is highly experimental.
 //! 
-//! Timeline animations are available for the following types
-//! [`Transition`]: Changes the transition of a Transform.
-//! [`Scale`]: Changes the scale of the Transform.
-//! [`Rotation`]: Changes the rotation of the Transform.
-//! 
+//!
 //! ## Implementation Notes
-//! - The entity to be animated must have a [`TimelinePlayerLoader`] entity embedded in it.
-//! - See `examples/custom_animatable` for custom animations
 //! 
-//! ## Inner process
-//! - After identifying the entity with the [`TimelinePlayerLoader`], it reads in the data from 
-//! [`TimelineRawData`] and creates a hashtable so that TimeilneImplPlugins can quickly parse their type of data.
-//! - The [`TimelineImplPlugin`] reads data that it can interpret from the type table in 
-//! the [`TimelinePlayerLoader`] and stores the data in the [`TimelineResolvedCache`].
+//! - The entity to be animated must have a [`TimelinePlayer`] entity embedded in it.
+//! - See `bevy_timeline_runtime/examples/custom_animatable_type` for custom animations
+//! - `bevy_timeline_runtime` is a library that can run animations.
+//! - `bevy_timeline_impls` is a set that implements animation interpolation behavior and is not a required element.
+//! - `bevy_timeline_editor` is an editor that can create and edit animations by applying elements in `bevy_timeline_impls`.
 
 mod player;
-mod value;
+pub mod value;
 mod loader;
 mod data;
 
@@ -251,22 +245,6 @@ macro_rules! impl_timeline_impl_sets {
     };
 }
 
-// impl <T1> TimelineImplSets for ( T1 )
-// where T1:AnimatableSet {
-//     fn add_systems(app:&mut App) {
-//         <T1 as AnimatableSet>::add_system( app );
-//     }
-//
-//     fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
-//         let result = <T1 as AnimatableSet>::try_resolve_keyframes( typ, keyframes );
-//         if result.is_some() {
-//             return result;
-//         }
-//         None
-//     }
-// }
-
-
 impl_timeline_impl_sets!( T1 );
 impl_timeline_impl_sets!( T1, T2 );
 impl_timeline_impl_sets!( T1, T2, T3 );
@@ -298,39 +276,6 @@ pub trait AnimatableSet where Self: 'static {
 
     fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>>;
 }
-
-// impl <V> AnimatableSet for V where V:AnimatableValue + 'static {
-//     type Target = V::Target;
-//
-//     fn step(
-//         assets: Res<Assets<TimelineAnimation>>,
-//         players: Query<&TimelinePlayer>,
-//         mut target_db: Query<&mut Self::Target>,
-//     ) {
-//         for player in players {
-//             for session in player.sessions().filter( |s| s.is_playing() ) {
-//                 if let Some(timeline) = assets.get( &session.anim_handle ) {
-//                     for binded_target in session.get_entities::<V>() {
-//                         if let Ok(out) = target_db.get_mut(binded_target.entity) {
-//                             if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<V>() {
-//                                 V::interpolate_from_keyframe(session.duration, session.progress, session.progress, keyframes, out);
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//
-//     fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
-//         if typ == V::typ() {
-//             Some( V::craete_untyped_keyframes( value ) )
-//         } else {
-//             None
-//         }
-//     }
-// }
-
 
 macro_rules! impl_animatable_set {
     ( $F:ident, $($T:ident),* ) => {
