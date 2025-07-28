@@ -12,7 +12,7 @@ pub struct EaseFunctionWrap<V> {
     value : V
 }
 
-impl <V> Default for EaseFunctionWrap<V> {
+impl <V> Default for EaseFunctionWrap<V> where V:AnimatableValue {
     fn default() -> Self {
         Self {
             ease: EaseFunction::Linear,
@@ -25,10 +25,10 @@ impl <V> AnimatableValue for EaseFunctionWrap<V> where V:AnimatableValue {
     type Target = V::Target;
 
     fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
-        if end.is_some() {
-            V::interpolate(start.ease.sample_unchecked(s), start, end, out);
+        if let Some(v) = end {
+            V::interpolate(start.ease.sample_unchecked(s), start.value, Some(v.value), out);
         } else {
-            V::interpolate(s, start, end, out);
+            V::interpolate(s, start.value, None, out);
         }
     }
 

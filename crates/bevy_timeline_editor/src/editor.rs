@@ -58,6 +58,10 @@ impl Default for TimelineEditorSettings {
     }
 }
 
+pub struct TargetState {
+    selected_keyframes : Vec<usize>,
+}
+
 
 #[derive(Resource,Default)]
 pub struct TimelineEditor {
