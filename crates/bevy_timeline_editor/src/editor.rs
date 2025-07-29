@@ -300,7 +300,7 @@ impl TimelineEditor {
             };
 
             if let Some(y_len) = y_len {
-                painter.line_segment( [Pos2::new(x-pad_scroll, y_len)+offset, Pos2::new(x-pad_scroll, RULER_HEIGHT)+offset], stroke );
+                painter.line_segment( [Pos2::new(x-pad_scroll, y_len)+offset, Pos2::new(x-pad_scroll, ruler_height)+offset], stroke );
                 if !label.is_empty() {
                     painter.text(
                         Pos2::new(x+2.-pad_scroll  , 1.)+offset,

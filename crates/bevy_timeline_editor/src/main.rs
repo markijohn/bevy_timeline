@@ -10,15 +10,24 @@ use bevy_egui::{egui, EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin,
 use bevy_egui::egui::Widget;
 use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
+use transform_gizmo_bevy::*;
+use bevy_mod_outline::*;
 
-mod editor;
+mod picking;
+// mod editor;
 
 type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
         .add_plugins(EguiPlugin::default())
-        .add_plugins( TimelinePlugin::<TimelineSet>::new() )
+        .add_plugins(TransformGizmoPlugin)
+        .add_plugins(picking::GizmoPickingPlugin)
+        .insert_resource(GizmoOptions {
+            hotkeys: Some(GizmoHotkeys::default()),
+            ..default()
+        })
+        .add_plugins(TimelinePlugin::<TimelineSet>::new())
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, draw_egui)
     .run();
@@ -64,12 +73,18 @@ const EXTRUSION_X_EXTENT: f32 = 16.0;
 const Z_EXTENT: f32 = 5.0;
 
 fn setup(
+    mut gizmo_options: ResMut<GizmoOptions>,
     mut commands: Commands,
     mut egui_global_settings: ResMut<EguiGlobalSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    gizmo_options.gizmo_modes.remove( GizmoMode::ScaleX );
+    gizmo_options.gizmo_modes.remove( GizmoMode::ScaleY );
+    gizmo_options.gizmo_modes.remove( GizmoMode::ScaleZ );
+    gizmo_options.visuals.gizmo_size = 75. / 2.;
+
     // Disable the automatic creation of a primary context to set it up manually for the camera we need.
     egui_global_settings.auto_create_primary_context = false;
 
@@ -130,6 +145,17 @@ fn setup(
             )
                 .with_rotation(Quat::from_rotation_x(-PI / 4.)),
             Shape,
+
+            // Pick,
+            OutlineVolume {
+                visible: false,
+                colour: Color::WHITE,
+                width: 2.0,
+            },
+            picking::PickSelection { is_selected: true },
+            OutlineStencil::default(),
+            OutlineMode::default(),
+            ComputedOutline::default(),
         ));
     }
 
@@ -154,6 +180,7 @@ fn setup(
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 7., 14.0).looking_at(Vec3::new(0., 1., 0.), Vec3::Y),
+        GizmoCamera,
     ));
 
     // Egui camera.
