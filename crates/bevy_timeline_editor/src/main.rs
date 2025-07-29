@@ -1,6 +1,5 @@
 use std::f32::consts::PI;
-use std::str::FromStr;
-use bevy::asset::RenderAssetUsages;
+use bevy::asset::{RenderAssetUsages, UnapprovedPathMode};
 use bevy::prelude::*;
 use bevy::render::camera::Viewport;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
@@ -12,14 +11,24 @@ use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
 use transform_gizmo_bevy::*;
 use bevy_mod_outline::*;
+use crate::editor::TimelineEditor;
 
 mod picking;
-// mod editor;
+mod editor;
 
-type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
+//type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
+type TimelineSet = (DefaultTransformSet,);
+
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
+        .init_resource::<AnimationData>()
+        .init_resource::<TimelineEditor>()
+        .add_plugins(DefaultPlugins
+                         .set(AssetPlugin {
+                             unapproved_path_mode: UnapprovedPathMode::Allow,
+                             ..default()
+                         })
+        )
         .add_plugins(EguiPlugin::default())
         .add_plugins(TransformGizmoPlugin)
         .add_plugins(picking::GizmoPickingPlugin)
@@ -33,8 +42,8 @@ fn main() {
     .run();
 }
 
-#[derive(Resource)]
-pub struct AnimationData(Vec<TimelineAnimation>);
+#[derive(Resource,Default)]
+pub struct AnimationData(Vec<Handle<TimelineAnimationSet>>);
 
 /// Creates a colorful test pattern
 fn uv_debug_texture() -> Image {
@@ -199,6 +208,11 @@ fn setup(
 
 fn draw_egui(
     time: Res<Time>,
+    mut anim_datas:ResMut<AnimationData>,
+    mut timeline_editor: ResMut<TimelineEditor>,
+    mut anim_sets:ResMut<Assets<TimelineAnimationSet>>,
+    mut anim_assets:ResMut<Assets<TimelineAnimation>>,
+    mut asset_server: ResMut<AssetServer>,
     mut egui_context: EguiContexts,
     mut camera: Single<&mut Camera, Without<EguiContext>>,
     window: Single<&mut Window, With<PrimaryWindow>>
@@ -215,17 +229,11 @@ fn draw_egui(
                 }
                 if ui.button("Load").clicked() {
                     if let Some(files) = rfd::FileDialog::new().pick_files() {
+                        
                         for file in files {
-                            let string = std::fs::read_to_string(file).unwrap();
-                            if let Ok(value) = serde_json::Value::from_str(&string) {
-                                if let Ok(anims) = TimelineAnimation::load_animations::<TimelineSet>( &value ) {
-
-                                } else {
-                                    error!("TimelineAnimation parse failed");
-                                }
-                            } else {
-                                error!("json load error");
-                            }
+                            let handle = asset_server.load( file );
+                            anim_datas.0.push( handle );
+                            
                         }
                     }
                 }
@@ -239,7 +247,13 @@ fn draw_egui(
         .resizable(true)
         .show(ctx_mut, |ui| {
             ui.horizontal(|ui| {
-
+                let mut datas = Vec::new();
+                for lazy_anim_set in anim_datas.0.iter() {
+                    if let Some(anim) = anim_sets.get( lazy_anim_set ) {
+                        datas.push( anim );
+                    }
+                }
+                timeline_editor.ui(ui, datas, &mut anim_assets); 
             });
             egui::Separator::default().spacing(0.).ui( ui );
         }).response.rect.height();
