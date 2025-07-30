@@ -1,3 +1,4 @@
+use bevy::input::keyboard::KeyboardInput;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::math::vec2;
 use bevy::prelude::*;
@@ -31,6 +32,7 @@ fn update_camera(
     window_q: Query<&Window>,
     mut ev_motion: EventReader<CursorMoved>,
     mut ev_scroll: EventReader<MouseWheel>,
+    mut input_key: Res<ButtonInput<KeyCode>>,
     input_mouse: Res<ButtonInput<MouseButton>>,
     mut query: Query<(&mut PanOrbitCamera, &mut Transform, &Projection)>,
 ) -> Result {
@@ -44,16 +46,17 @@ fn update_camera(
     let mut scroll = 0.0;
     let mut orbit_button_changed = false;
 
+    
     if input_mouse.pressed(orbit_button) {
         let mouse_delta = ev_motion.read().map(|event| event.delta.unwrap_or(Vec2::ZERO) ).sum::<Vec2>();
-        rotation_move += mouse_delta;
-    } else if input_mouse.pressed(pan_button) {
-        let mouse_delta = ev_motion.read().map(|event| event.delta.unwrap_or(Vec2::ZERO) ).sum::<Vec2>();
-        pan += mouse_delta;
+        if input_key.pressed(KeyCode::ShiftLeft) || input_mouse.pressed(pan_button) {
+            pan += mouse_delta;
+        } else {
+            rotation_move += mouse_delta;
+        }
     }
     for ev in ev_scroll.read() {
         scroll += ev.y;
-
         scroll /= if cfg!(target_arch = "wasm32") {
             100.0
         } else {

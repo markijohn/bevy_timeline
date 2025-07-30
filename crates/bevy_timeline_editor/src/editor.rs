@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy::winit::WinitSettings;
 use bevy_egui::egui::{self, Frame, Pos2, Shape, Stroke, Color32, Rect, Vec2, FontId, Widget, Sense, PointerButton, PointerState, Id, Rangef, Align, StrokeKind, ScrollArea, Slider, UiBuilder, Ui, InnerResponse};
 use bevy_egui::{EguiContexts, EguiPlugin};
-use bevy_timeline_runtime::prelude::{TimelineAnimation, TimelineAnimationSet};
+use bevy_timeline_runtime::prelude::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedTarget};
 
 fn format_f32(value: f32) -> String {
     if value.fract() == 0.0 {
@@ -138,18 +138,15 @@ impl TimelineEditor {
                             (shift, rect)
                         });
 
-                        // for anim_set in anim_set.iter() {
-                        //     for anim_handle in anim_set.anim_handles.iter() {
-                        //         if let Some(anim) = assets.get(anim_handle) {
-                        //             println!("{}", anim.name);
-                        //         }
-                        //     }
-                        // }
-
-                        // let len = self.targets.len();
-                        // for index in (0 .. len) {
-                        //     self.draw_target(ui, index, &selected_rect);
-                        // }
+                        for anim_set in anim_set.iter() {
+                            for anim_handle in anim_set.anim_handles.iter() {
+                                if let Some(anim) = assets.get(anim_handle) {
+                                    for target in anim.targets.iter() {
+                                        self.draw_target(ui, target);
+                                    }
+                                }
+                            }
+                        }
                     });
 
                 self.scroll_offset_y = scroll_response.state.offset.y;
@@ -333,54 +330,55 @@ impl TimelineEditor {
     fn draw_target(
         &mut self,
         ui: &mut egui::Ui,
-        index:usize,
+        index: usize,
+        target: &TimelineUntypedTarget,
         selected_rect:&Option<(bool,Rect)>
     ) {
-        // let key_size = self.ui_settings.key_size;
-        // let min_msec_width = self.ui_settings.min_msec_width;
-        // let target_height = self.ui_settings.target_height;
-        // let target = &mut self.targets[index];
-        // let stroke_normal = Stroke::new(1.0, Color32::GRAY);
-        // let stroke_selected = Stroke::new(1.0, Color32::WHITE);
-        // ui.horizontal(|ui| {
-        //     ui.add_sized(Vec2::new(self.target_name_width, target_height), egui::Label::new(target.name.as_str()).selectable(false).truncate() );
-        // 
-        //     // 오른쪽: 키프레임 표시
-        //     let (response,painter) = ui.allocate_painter( Vec2::new(ui.available_width(), target_height), Sense::hover() );
-        //     if index % 2 == 0 {
-        //         painter.rect_filled( response.rect, 0., Color32::from_rgba_unmultiplied(80, 80, 80, 50) );
-        //     } else {
-        //         painter.rect_filled( response.rect, 0., Color32::default() );
-        //     }
-        //     for (i,keyframe) in target.keyframes.iter_mut().enumerate() {
-        //         let x = response.rect.min.x + (keyframe.time * self.zoom * min_msec_width*10.) - self.scroll_offset_x;
-        //         let pos = Pos2::new(x, response.rect.min.y + response.rect.height()/2. );
-        //         if let Some( (shift_pressed,rect) ) = selected_rect {
-        //             if rect.contains( pos ) {
-        //                 keyframe.selected = true;
-        //             } else {
-        //                 if !shift_pressed {
-        //                     keyframe.selected = false;
-        //                 }
-        //             }
-        //         }
-        //         if x < response.rect.min.x {
-        //             continue;
-        //         }
-        //         if x > response.rect.max.x {
-        //             continue;
-        //             //break; //for selected_rect
-        //         }
-        //         let stroke = if keyframe.selected {
-        //             stroke_selected
-        //         } else {
-        //             stroke_normal
-        //         };
-        //         painter.circle_stroke( pos, key_size, stroke );
-        //     }
-        // 
-        // 
-        // });
+        let key_size = self.ui_settings.key_size;
+        let min_msec_width = self.ui_settings.min_msec_width;
+        let target_height = self.ui_settings.target_height;
+        let stroke_normal = Stroke::new(1.0, Color32::GRAY);
+        let stroke_selected = Stroke::new(1.0, Color32::WHITE);
+        let name = target.target[ target.target.len()-1 ].as_str();
+        ui.horizontal(|ui| {
+            ui.add_sized(Vec2::new(self.target_name_width, target_height), egui::Label::new(name).selectable(false).truncate() );
+        
+            // 오른쪽: 키프레임 표시
+            let (response,painter) = ui.allocate_painter( Vec2::new(ui.available_width(), target_height), Sense::hover() );
+            if index % 2 == 0 {
+                painter.rect_filled( response.rect, 0., Color32::from_rgba_unmultiplied(80, 80, 80, 50) );
+            } else {
+                painter.rect_filled( response.rect, 0., Color32::default() );
+            }
+            for (i,keyframe) in target.keyframes.iter_mut().enumerate() {
+                let x = response.rect.min.x + (keyframe.time * self.zoom * min_msec_width*10.) - self.scroll_offset_x;
+                let pos = Pos2::new(x, response.rect.min.y + response.rect.height()/2. );
+                if let Some( (shift_pressed,rect) ) = selected_rect {
+                    if rect.contains( pos ) {
+                        keyframe.selected = true;
+                    } else {
+                        if !shift_pressed {
+                            keyframe.selected = false;
+                        }
+                    }
+                }
+                if x < response.rect.min.x {
+                    continue;
+                }
+                if x > response.rect.max.x {
+                    continue;
+                    //break; //for selected_rect
+                }
+                let stroke = if keyframe.selected {
+                    stroke_selected
+                } else {
+                    stroke_normal
+                };
+                painter.circle_stroke( pos, key_size, stroke );
+            }
+        
+        
+        });
     }
 
 
