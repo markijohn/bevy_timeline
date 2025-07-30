@@ -63,7 +63,7 @@ pub struct TargetState {
 }
 
 
-#[derive(Resource,Default)]
+#[derive(Resource)]
 pub struct TimelineEditor {
     ui_settings: TimelineEditorSettings,
     time: f32,
@@ -78,9 +78,8 @@ pub struct TimelineEditor {
     target_name_width : f32,
 }
 
-
-impl TimelineEditor {
-    fn new() -> Self {
+impl Default for TimelineEditor {
+    fn default() -> Self {
         let ui_settings = TimelineEditorSettings::default();
         let zoom = ui_settings.min_zoom;
         let target_name_width = ui_settings.default_target_name_width;
@@ -98,18 +97,14 @@ impl TimelineEditor {
             target_name_width,
         }
     }
-    
-    pub fn ui(&mut self, ui:&mut Ui, anim_set:Vec<&TimelineAnimationSet>, assets:&mut ResMut<Assets<TimelineAnimation>> ) {
-        for anim_set in anim_set.iter() {
-            for anim_handle in anim_set.0.iter() {
-                if let Some(anim) = assets.get(anim_handle) {
-                    println!("{}", anim.name);
-                }
-            }
-        }
+}
+
+impl TimelineEditor {
+    fn new() -> Self {
+        Default::default()
     }
 
-    fn draw_animation(&mut self, ui: &mut Ui, anim:&TimelineAnimation ) {
+    pub fn ui(&mut self, ui:&mut Ui, anim_set:Vec<&TimelineAnimationSet>, assets:&mut ResMut<Assets<TimelineAnimation>> ) {
         let key_size = self.ui_settings.key_size;
         let max_target_name_width = self.ui_settings.max_target_name_width;
         let focus_time_pad_x = self.ui_settings.focus_time_pad_x;
@@ -118,7 +113,7 @@ impl TimelineEditor {
         let min_zoom = self.ui_settings.min_zoom;
         let max_zoom = self.ui_settings.max_zoom;
         let ruler_height = self.ui_settings.ruler_height;
-        let frame = Frame::none().fill(Color32::from_gray(20));
+        let frame = Frame::new().fill(Color32::from_gray(20));
         frame.show(ui, |ui| {
             let ruler_response = ui.vertical( |ui| {
                 // Ruler (시간 표시)
@@ -142,6 +137,14 @@ impl TimelineEditor {
                             rect.max.y += key_size;
                             (shift, rect)
                         });
+
+                        // for anim_set in anim_set.iter() {
+                        //     for anim_handle in anim_set.anim_handles.iter() {
+                        //         if let Some(anim) = assets.get(anim_handle) {
+                        //             println!("{}", anim.name);
+                        //         }
+                        //     }
+                        // }
 
                         // let len = self.targets.len();
                         // for index in (0 .. len) {
@@ -282,48 +285,48 @@ impl TimelineEditor {
         ui.allocate_exact_size( Vec2::new(self.target_name_width, ruler_height), Sense::hover() );
         //ui.add_space(self.target_name_width);
         let (response,painter) = ui.allocate_painter( Vec2::new(ui.available_width(), ruler_height), Sense::hover() );
-        // let mut offset = response.rect.min.to_vec2();
-        // 
-        // //1msec 길이
-        // let one_msec_width = self.zoom * min_msec_width;
-        // 
-        // //1sec 길이
-        // let one_sec_width = one_msec_width * 10.;
-        // 
-        // //현재 횡스크롤된 width
-        // let scroll_offset = self.scroll_offset_x;
-        // let pad_scroll = self.scroll_offset_x % one_msec_width;
-        // 
-        // let mut x = 0.;
-        // while x < response.rect.width() {
-        //     let time_x = x + scroll_offset - (scroll_offset%one_msec_width); //? (self.zoom * scroll_offset)
-        //     let (y_len, label, stroke):(Option<f32>, String, Stroke) = if time_x % one_sec_width == 0. {
-        //         ( Some( 0. ), format!("{}", time_x/one_sec_width ), sec_stroke.clone() )
-        //     } else if time_x % one_sec_width == one_sec_width/2. {
-        //         ( Some( (ruler_height * 0.5) ), String::new(), mid_stroke.clone() )
-        //     } else {
-        //         if self.zoom > 3.0 {
-        //             ( Some(ruler_height * 0.75), String::new(), dot_stroke.clone() )
-        //         } else {
-        //             ( None, String::new(), dot_stroke.clone() )
-        //         }
-        //     };
-        // 
-        //     if let Some(y_len) = y_len {
-        //         painter.line_segment( [Pos2::new(x-pad_scroll, y_len)+offset, Pos2::new(x-pad_scroll, ruler_height)+offset], stroke );
-        //         if !label.is_empty() {
-        //             painter.text(
-        //                 Pos2::new(x+2.-pad_scroll  , 1.)+offset,
-        //                 egui::Align2::LEFT_TOP,
-        //                 label,
-        //                 fid.clone(),
-        //                 Color32::WHITE,
-        //             );
-        //         }
-        // 
-        //     }
-        //     x += one_msec_width;
-        // }
+        let mut offset = response.rect.min.to_vec2();
+
+        //1msec 길이
+        let one_msec_width = self.zoom * min_msec_width;
+
+        //1sec 길이
+        let one_sec_width = one_msec_width * 10.;
+
+        //현재 횡스크롤된 width
+        let scroll_offset = self.scroll_offset_x;
+        let pad_scroll = self.scroll_offset_x % one_msec_width;
+
+        let mut x = 0.;
+        while x < response.rect.width() {
+            let time_x = x + scroll_offset - (scroll_offset%one_msec_width); //? (self.zoom * scroll_offset)
+            let (y_len, label, stroke):(Option<f32>, String, Stroke) = if time_x % one_sec_width == 0. {
+                ( Some( 0. ), format!("{}", time_x/one_sec_width ), sec_stroke.clone() )
+            } else if time_x % one_sec_width == one_sec_width/2. {
+                ( Some( (ruler_height * 0.5) ), String::new(), mid_stroke.clone() )
+            } else {
+                if self.zoom > 3.0 {
+                    ( Some(ruler_height * 0.75), String::new(), dot_stroke.clone() )
+                } else {
+                    ( None, String::new(), dot_stroke.clone() )
+                }
+            };
+
+            if let Some(y_len) = y_len {
+                painter.line_segment( [Pos2::new(x-pad_scroll, y_len)+offset, Pos2::new(x-pad_scroll, ruler_height)+offset], stroke );
+                if !label.is_empty() {
+                    painter.text(
+                        Pos2::new(x+2.-pad_scroll  , 1.)+offset,
+                        egui::Align2::LEFT_TOP,
+                        label,
+                        fid.clone(),
+                        Color32::WHITE,
+                    );
+                }
+
+            }
+            x += one_msec_width;
+        }
         response
     }
 

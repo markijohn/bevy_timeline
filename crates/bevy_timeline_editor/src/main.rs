@@ -13,6 +13,7 @@ use transform_gizmo_bevy::*;
 use bevy_mod_outline::*;
 use crate::editor::TimelineEditor;
 
+mod camera;
 mod picking;
 mod editor;
 
@@ -29,6 +30,7 @@ fn main() {
                              ..default()
                          })
         )
+        .add_plugins(camera::PanOrbitCameraPlugin)
         .add_plugins(EguiPlugin::default())
         .add_plugins(TransformGizmoPlugin)
         .add_plugins(picking::GizmoPickingPlugin)
@@ -92,7 +94,7 @@ fn setup(
     gizmo_options.gizmo_modes.remove( GizmoMode::ScaleX );
     gizmo_options.gizmo_modes.remove( GizmoMode::ScaleY );
     gizmo_options.gizmo_modes.remove( GizmoMode::ScaleZ );
-    gizmo_options.visuals.gizmo_size = 75. / 2.;
+    gizmo_options.visuals.gizmo_size = 75. / 1.3;
 
     // Disable the automatic creation of a primary context to set it up manually for the camera we need.
     egui_global_settings.auto_create_primary_context = false;
@@ -186,8 +188,18 @@ fn setup(
     ));
 
     //World camera
+    // commands.spawn((
+    //     Camera3d::default(),
+    //     Transform::from_xyz(0.0, 7., 14.0).looking_at(Vec3::new(0., 1., 0.), Vec3::Y),
+    //     GizmoCamera,
+    // ));
     commands.spawn((
+        camera::PanOrbitCamera {
+            // radius: camera_transform.translation.length(),
+            ..Default::default()
+        },
         Camera3d::default(),
+        // camera_transform.looking_at(Vec3::ZERO, Vec3::Y),
         Transform::from_xyz(0.0, 7., 14.0).looking_at(Vec3::new(0., 1., 0.), Vec3::Y),
         GizmoCamera,
     ));

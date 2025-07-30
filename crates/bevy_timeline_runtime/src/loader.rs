@@ -30,6 +30,7 @@ impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets 
         _settings: &(),
         load_context: &mut LoadContext<'_>,
     ) -> Result<Self::Asset, Self::Error> {
+
         let mut string = String::new();
         reader.read_to_string(&mut string).await?;
         let value = serde_json::Value::from_str(&string)?;
@@ -41,7 +42,10 @@ impl <K> AssetLoader for TimelineAnimationSetLoader<K> where K:TimelineImplSets 
                 load_context.add_loaded_labeled_asset(anim.name.clone(), LoadedAsset::from(anim))
             );
         });
-        Ok( TimelineAnimationSet(anim_sets) )
+        Ok( TimelineAnimationSet {
+            path: Some( load_context.path().to_path_buf() ),
+            anim_handles : anim_sets
+        } )
     }
 
     fn extensions(&self) -> &[&str] {

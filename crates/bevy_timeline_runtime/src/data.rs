@@ -12,7 +12,10 @@ use crate::{AnimatableValue, TimelineError, TimelineImplSets};
 
 
 #[derive(Debug,TypePath,Asset)]
-pub struct TimelineAnimationSet(pub Vec<Handle<TimelineAnimation>>);
+pub struct TimelineAnimationSet{
+    pub path: Option<std::path::PathBuf>,
+    pub anim_handles: Vec<Handle<TimelineAnimation>>
+}
 
 #[derive(Debug,TypePath,Asset)]
 pub struct TimelineAnimation {
