@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy::winit::WinitSettings;
 use bevy_egui::egui::{self, Frame, Pos2, Shape, Stroke, Color32, Rect, Vec2, FontId, Widget, Sense, PointerButton, PointerState, Id, Rangef, Align, StrokeKind, ScrollArea, Slider, UiBuilder, Ui, InnerResponse};
 use bevy_egui::{EguiContexts, EguiPlugin};
-use bevy_timeline_runtime::prelude::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedTarget};
+use bevy_timeline_runtime::prelude::{TimelineAnimation, TimelineAnimationSet, TimelineTarget};
 
 fn format_f32(value: f32) -> String {
     if value.fract() == 0.0 {
@@ -141,8 +141,8 @@ impl TimelineEditor {
                         for anim_set in anim_set.iter() {
                             for anim_handle in anim_set.anim_handles.iter() {
                                 if let Some(anim) = assets.get(anim_handle) {
-                                    for target in anim.targets.iter() {
-                                        self.draw_target(ui, target);
+                                    for (idx,target) in anim.targets.iter().enumerate() {
+                                        self.draw_target(ui, idx, target, &selected_rect);
                                     }
                                 }
                             }
@@ -331,7 +331,7 @@ impl TimelineEditor {
         &mut self,
         ui: &mut egui::Ui,
         index: usize,
-        target: &TimelineUntypedTarget,
+        target: &TimelineTarget,
         selected_rect:&Option<(bool,Rect)>
     ) {
         let key_size = self.ui_settings.key_size;
@@ -350,17 +350,17 @@ impl TimelineEditor {
             } else {
                 painter.rect_filled( response.rect, 0., Color32::default() );
             }
-            for (i,keyframe) in target.keyframes.iter_mut().enumerate() {
-                let x = response.rect.min.x + (keyframe.time * self.zoom * min_msec_width*10.) - self.scroll_offset_x;
+            for (i,time) in target.get_times().iter().enumerate() {
+                let x = response.rect.min.x + (time * self.zoom * min_msec_width*10.) - self.scroll_offset_x;
                 let pos = Pos2::new(x, response.rect.min.y + response.rect.height()/2. );
                 if let Some( (shift_pressed,rect) ) = selected_rect {
-                    if rect.contains( pos ) {
-                        keyframe.selected = true;
-                    } else {
-                        if !shift_pressed {
-                            keyframe.selected = false;
-                        }
-                    }
+                    // if rect.contains( pos ) {
+                    //     keyframe.selected = true;
+                    // } else {
+                    //     if !shift_pressed {
+                    //         keyframe.selected = false;
+                    //     }
+                    // }
                 }
                 if x < response.rect.min.x {
                     continue;
@@ -369,11 +369,14 @@ impl TimelineEditor {
                     continue;
                     //break; //for selected_rect
                 }
-                let stroke = if keyframe.selected {
-                    stroke_selected
-                } else {
-                    stroke_normal
-                };
+                
+                // let stroke = if keyframe.selected {
+                //     stroke_selected
+                // } else {
+                //     stroke_normal
+                // };
+                let stroke = stroke_normal;
+                
                 painter.circle_stroke( pos, key_size, stroke );
             }
         

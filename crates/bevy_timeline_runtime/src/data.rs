@@ -9,7 +9,7 @@ use bevy_reflect::TypePath;
 use serde::Deserialize;
 use serde_json::Value;
 use crate::{AnimatableValue, TimelineError, TimelineImplSets};
-
+use crate::value::ValueExt;
 
 #[derive(Debug,TypePath,Asset)]
 pub struct TimelineAnimationSet{
@@ -21,7 +21,7 @@ pub struct TimelineAnimationSet{
 pub struct TimelineAnimation {
     pub name: String,
     pub duration: f32,
-    pub targets: Vec<TimelineUntypedTarget>,
+    pub targets: Vec<TimelineTarget>,
 }
 
 impl TimelineAnimation {
@@ -32,7 +32,7 @@ impl TimelineAnimation {
         let targets_value = map.get("targets").ok_or(TimelineError::IncorrectValueType("targets(in animation) is not exist"))?.as_array().ok_or(TimelineError::IncorrectValueType("targets must be array"))?;
         let mut targets = Vec::with_capacity(targets_value.len());
         for i in targets_value {
-            targets.push( TimelineUntypedTarget::from::<V>( i )? );
+            targets.push( TimelineTarget::from::<V>( i )? );
         }
         Ok(TimelineAnimation { name, duration, targets })
     }
@@ -47,33 +47,33 @@ impl TimelineAnimation {
     }
 }
 
-#[derive(Clone)]
-pub struct TimelineKeyframe<T> where T:AnimatableValue{
-    pub time:f32,
-    pub data:T
-}
+// #[derive(Clone)]
+// pub struct TimelineKeyframe<T> where T:AnimatableValue{
+//     pub time:f32,
+//     pub data:T
+// }
+// 
+// impl <T> TimelineKeyframe<T> where T:AnimatableValue {
+//     pub fn from(value:&Value) -> Result<TimelineKeyframe<T>, TimelineError>{
+//         let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
+//         let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
+//         let data = serde_json::from_value::<T>( keyframe["data"].clone() )?;
+//         Ok( TimelineKeyframe { time,data } )
+//     }
+// }
 
-impl <T> TimelineKeyframe<T> where T:AnimatableValue {
-    pub fn from(value:&Value) -> Result<TimelineKeyframe<T>, TimelineError>{
-        let keyframe = value.as_object().ok_or( TimelineError::IncorrectValueType("keyframe is not object") )?;
-        let time = keyframe.get("time").ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not exist") )?.as_f64().ok_or( TimelineError::IncorrectValueType("time(in keyframe) is not number") )? as f32;
-        let data = serde_json::from_value::<T>( keyframe["data"].clone() )?;
-        Ok( TimelineKeyframe { time,data } )
-    }
-}
-
-pub struct TimelineUntypedKeyframes {
+pub struct TimelineUntypedSeq {
     pub typ:&'static str,
     pub(crate) addr: usize,
     pub(crate) length: usize,
     pub(crate) dropper : Box<dyn Fn() + Send + Sync + 'static>,
 }
 
-impl TimelineUntypedKeyframes {
-    fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
+impl TimelineUntypedSeq {
+    fn get_typed<T:AnimatableValue>(&self) -> Result<&[T], TimelineError> {
         unsafe {
             if T::typ() == self.typ {
-                Ok( std::slice::from_raw_parts(self.addr as *const TimelineKeyframe<T>, self.length) )
+                Ok( std::slice::from_raw_parts(self.addr as *const T, self.length) )
             } else {
                 Err( TimelineError::TypeNotMatch {request:T::typ(), actual: self.typ})
             }
@@ -81,7 +81,7 @@ impl TimelineUntypedKeyframes {
     }
 }
 
-impl Drop for TimelineUntypedKeyframes {
+impl Drop for TimelineUntypedSeq {
     fn drop(&mut self) {
         unsafe {
             (self.dropper) ();
@@ -90,21 +90,22 @@ impl Drop for TimelineUntypedKeyframes {
 }
 
 #[derive(TypePath,Asset)]
-pub struct TimelineUntypedTarget {
+pub struct TimelineTarget {
     pub target: Vec<String>,
-    pub keyframes: TimelineUntypedKeyframes,
+    pub times: Vec<f32>,
+    pub seq: TimelineUntypedSeq,
 }
 
-impl Debug for TimelineUntypedTarget {
+impl Debug for TimelineTarget {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "TimelineUntypedTarget({}, keyframes:{})", self.target.join(","), self.keyframes.length)
+        write!(f, "TimelineUntypedTarget({}, keyframes:{})", self.target.join(","), self.seq.length)
     }
 }
 
 
-impl TimelineUntypedTarget {
+impl TimelineTarget {
     pub fn typ(&self) -> &'static str {
-        self.keyframes.typ
+        self.seq.typ
     }
 
     pub fn from<V:TimelineImplSets>(value:&Value) -> Result<Self, TimelineError> {
@@ -117,20 +118,29 @@ impl TimelineUntypedTarget {
         for i in target_value {
             target.push( i.as_str().ok_or(TimelineError::IncorrectValueType("target must be string"))?.to_string() );
         }
-        let value = map.get("keyframes").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
+        
+        let times = map.get("times").ok_or(TimelineError::IncorrectValueType("times not exist"))?;
+        let times = times.as_array_f32()?;
+        
+        let seq = map.get("seq").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
             .as_array().ok_or(TimelineError::IncorrectValueType("keyframes is not array"))?;
-        let keyframes = if let Some(result) = V::try_resolve_keyframes( typ, value.as_slice() ) {
+        let seq = if let Some(result) = V::try_resolve_keyframes( typ, seq.as_slice() ) {
             result?
         } else {
             return Err(TimelineError::UnknownTargetType(typ.to_string()))
         };
         Ok( Self {
             target,
-            keyframes,
+            times,
+            seq,
         } )
     }
+    
+    pub fn get_times(&self) -> &[f32] {
+        self.times.as_slice()
+    }
 
-    pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[TimelineKeyframe<T>], TimelineError> {
-        self.keyframes.get_typed::<T>()
+    pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[T], TimelineError> {
+        self.seq.get_typed::<T>()
     }
 }

@@ -6,7 +6,7 @@ use bevy_transform::prelude::{Transform};
 use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use crate::{TimelineError};
-use crate::data::{TimelineKeyframe, TimelineUntypedKeyframes};
+use crate::data::{TimelineUntypedSeq};
 
 
 pub trait ValueExt {
@@ -95,12 +95,12 @@ pub trait AnimatableValue:Default+Clone+Sized+Serialize+for<'a> Deserialize<'a>+
     /// `keyframes` : all keyframes
     /// `out` : output
     /// return : Some(usize) : changed key frame index, None : keyframe not changed
-    fn interpolate_from_keyframe(_duration:f32, _prev_time:f32, curr_time:f32, keyframes:&[TimelineKeyframe<Self>], mut out:Mut<Self::Target>) {
-        if keyframes.is_empty() {
+    fn interpolate_from_keyframe(_duration:f32, _prev_time:f32, curr_time:f32, times:&[f32], seq:&[Self], mut out:Mut<Self::Target>) {
+        if times.is_empty() {
             return;
         }
 
-        let (before,next) = match keyframes.binary_search_by(|probe| probe.time.partial_cmp(&curr_time).unwrap()) {
+        let (before,next) = match times.binary_search_by(|time| time.partial_cmp(&curr_time).unwrap()) {
             Ok(i) => {
                 let before = if i > 0 {
                     Some(i - 1)
@@ -110,26 +110,26 @@ pub trait AnimatableValue:Default+Clone+Sized+Serialize+for<'a> Deserialize<'a>+
             }
             Err(i) => {
                 let before = if i > 0 { Some(i - 1) } else { None };
-                let next = if i < keyframes.len() { Some(i) } else { None };
+                let next = if i < times.len() { Some(i) } else { None };
                 (before, next)
             }
         };
         let (start,end) = (
-            before.map(|idx| keyframes[idx].clone()),
-            next.map(|idx| keyframes[idx].clone())
+            before.map(|idx| (times[idx], seq[idx].clone()) ),
+            next.map(|idx| (times[idx], seq[idx].clone()) )
         );
 
         match (start, end) {
-            (Some(start), None) => {
+            (Some( (start,data) ), None) => {
                 // TODO : If there is no next keyframe to process and the previous keyframe processed is 
                 // the same as the start keyframe, no processing is required, i.e., no Mut value is substituted, which prevents bevy from being marked Changed.
                 //end of keyframe
-                Self::interpolate(0., start.data, None, out.as_mut());
+                Self::interpolate(0., data, None, out.as_mut());
             }
-            (Some(start), Some(end)) => {
-                let time_diff = end.time - start.time;
-                let s = (curr_time - start.time) / time_diff;
-                Self::interpolate(s, start.data, Some(end.data), out.as_mut());
+            (Some( (start,start_data) ), Some( (end, end_data) ) ) => {
+                let time_diff = end - start;
+                let s = (curr_time - start) / time_diff;
+                Self::interpolate(s, start_data, Some(end_data), out.as_mut());
             }
             _ => {
                 //No frames
@@ -139,10 +139,10 @@ pub trait AnimatableValue:Default+Clone+Sized+Serialize+for<'a> Deserialize<'a>+
     
     fn interpolate(s:f32, start:Self, end:Option<Self>, out:&mut Self::Target);
 
-    fn create_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedKeyframes, TimelineError> {
-        let mut keyframes = Vec::<TimelineKeyframe<Self>>::with_capacity( value.len() );
+    fn create_untyped_keyframes(value:&[Value]) -> Result<TimelineUntypedSeq, TimelineError> {
+        let mut keyframes = Vec::<Self>::with_capacity( value.len() );
         for i in value {
-            keyframes.push( TimelineKeyframe::<Self>::from(i)? );
+            keyframes.push( serde_json::from_value( i.clone() )? );
         }
         let addr = keyframes.as_mut_ptr() as usize;
         let length = keyframes.len();
@@ -151,7 +151,7 @@ pub trait AnimatableValue:Default+Clone+Sized+Serialize+for<'a> Deserialize<'a>+
         let dropper = Box::new( move || {
             unsafe { Vec::from_raw_parts(addr as *mut Self, length, capacity); }
         });
-        Ok( TimelineUntypedKeyframes {
+        Ok( TimelineUntypedSeq {
             typ: Self::typ(),
             addr,
             length,

@@ -31,7 +31,7 @@ use bevy_asset::prelude::*;
 use bevy_ecs::component::{Mutable};
 use serde_json::Value;
 use thiserror::Error;
-use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes};
+use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedSeq};
 use crate::loader::TimelineAnimationSetLoader;
 use crate::player::TimelineTargetBinded;
 
@@ -42,7 +42,7 @@ pub mod prelude {
     pub use crate::DefaultTransformSet;
     pub use crate::player::{TimelinePlayer, TimelineSession, TimelinePlayback, TimelinePlayOption};
     pub use crate::value::{AnimatableValue,ValueExt};
-    pub use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedKeyframes, TimelineUntypedTarget};
+    pub use crate::data::{TimelineAnimation, TimelineAnimationSet, TimelineUntypedSeq, TimelineTarget};
 }
 
 #[non_exhaustive]
@@ -217,7 +217,7 @@ fn bind_target_entities(
 pub trait TimelineImplSets {
     fn add_systems(app:&mut App);
     
-    fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>>;
+    fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedSeq,TimelineError>>;
 }
 
 
@@ -232,7 +232,7 @@ macro_rules! impl_timeline_impl_sets {
                 )+
             }
 
-            fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
+            fn try_resolve_keyframes(typ:&str, keyframes:&[Value]) -> Option<Result<TimelineUntypedSeq,TimelineError>> {
                 $(
                 let result = <$tuple as AnimatableSet>::try_resolve_keyframes( typ, keyframes );
                 if result.is_some() {
@@ -274,7 +274,7 @@ pub trait AnimatableSet where Self: 'static {
         target_db: Query<&mut Self::Target>,
     );
 
-    fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>>;
+    fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedSeq,TimelineError>>;
 }
 
 macro_rules! impl_animatable_set {
@@ -295,8 +295,9 @@ macro_rules! impl_animatable_set {
                         if let Some(timeline) = assets.get( &session.anim_handle ) {
                             for binded_target in session.get_entities::<$F>() {
                                 if let Ok(out) = outputs.get_mut(binded_target.entity) {
-                                    if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$F>() {
-                                        $F::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, keyframes, out);
+                                    let target = &timeline.targets[ binded_target.target_idx ];
+                                    if let Ok(keyframes) = target.get_typed::<$F>() {
+                                        $F::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, target.get_times(), keyframes, out);
                                     }
                                 }
                             }
@@ -304,8 +305,9 @@ macro_rules! impl_animatable_set {
                             $(
                             for binded_target in session.get_entities::<$T>() {
                                 if let Ok(out) = outputs.get_mut(binded_target.entity) {
-                                    if let Ok(keyframes) = timeline.targets[ binded_target.target_idx ].get_typed::<$T>() {
-                                        $T::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, keyframes, out);
+                                    let target = &timeline.targets[ binded_target.target_idx ];
+                                    if let Ok(keyframes) = target.get_typed::<$T>() {
+                                        $T::interpolate_from_keyframe(session.duration, session.prev_progress, session.progress, target.get_times(), keyframes, out);
                                     }
                                 }
                             }
@@ -315,7 +317,7 @@ macro_rules! impl_animatable_set {
                 }
             }
 
-            fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedKeyframes,TimelineError>> {
+            fn try_resolve_keyframes(typ:&str, value:&[Value]) -> Option<Result<TimelineUntypedSeq,TimelineError>> {
                 if $F::typ() == typ {
                     return Some( $F::create_untyped_keyframes( value ) )
                 }
