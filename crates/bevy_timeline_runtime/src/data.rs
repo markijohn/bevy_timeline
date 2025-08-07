@@ -92,6 +92,10 @@ impl Drop for TimelineUntypedSeq {
 #[derive(TypePath,Asset)]
 pub struct TimelineTarget {
     pub target: Vec<String>,
+
+    //not serialized data
+    pub selected: Vec<bool>,
+    
     pub times: Vec<f32>,
     pub seq: TimelineUntypedSeq,
 }

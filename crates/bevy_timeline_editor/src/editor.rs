@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use bevy::app::{App, PreUpdate, Startup, Update};
 use bevy::DefaultPlugins;
 use bevy::prelude::*;
@@ -26,6 +27,8 @@ pub struct TimelineEditorSettings {
 
     key_size:f32,
 
+    left_padding:f32,
+
     min_zoom:f32,
     max_zoom:f32,
 
@@ -38,19 +41,21 @@ pub struct TimelineEditorSettings {
 impl Default for TimelineEditorSettings {
     fn default() -> Self {
         Self {
-            min_msec_width:1.0,
+            min_msec_width:1.0, //ruler min millisecond width
             default_target_name_width: 100.,
             max_target_name_width: 300.,
 
-            ruler_height: 30.,
-            target_height: 20.,
+            ruler_height: 30., //ruler height
+            target_height: 20., //target height(keyframe line height)
 
-            key_size: 4.,
+            key_size: 4., //key circle size
+
+            left_padding: 20. ,
 
             min_zoom: 3.0,
             max_zoom: 15.,
 
-            time_label_size: 10.,
+            time_label_size: 10., //time label size on ruler
 
             focus_time_pad_x: 6.,
             focus_time_pad_y: 2.,
@@ -58,8 +63,18 @@ impl Default for TimelineEditorSettings {
     }
 }
 
-pub struct TargetState {
+pub struct TargetEditState {
+    visible: bool,
     selected_keyframes : Vec<usize>,
+}
+
+pub struct AnimationEditState {
+    visible: bool,
+    targets: HashMap< Vec<String>, TargetEditState>,
+}
+
+pub struct AnimationSetEditState {
+    list: Vec<AnimationEditState>,
 }
 
 
@@ -76,6 +91,7 @@ pub struct TimelineEditor {
     drag_start: Option<Pos2>,
     selected_rect: Option< (bool,Rect) >,
     target_name_width : f32,
+    edit_state: HashMap<Handle<TimelineAnimation>, Vec<AnimationSetEditState>>
 }
 
 impl Default for TimelineEditor {
@@ -95,6 +111,7 @@ impl Default for TimelineEditor {
             selected_rect: None,
             scroll_start: None,
             target_name_width,
+            edit_state: HashMap::new()
         }
     }
 }
@@ -103,9 +120,49 @@ impl TimelineEditor {
     fn new() -> Self {
         Default::default()
     }
+    
+    fn mapping_state(&mut self,anim_set:&[TimelineAnimationSet], assets:&mut ResMut<Assets<TimelineAnimation>>) {
+        let anim_set_list:Vec<Vec<&TimelineAnimation>> = anim_set.iter().map( |v| {
+            v.anim_handles.iter()
+                .map( |handle| {
+                    assets.get(handle)
+                })
+                .filter( |v| v.is_some() )
+                .map( |v| v.unwrap() )
+                .collect()
+        }).collect();
+        
+        for anim_set in anim_set_list {
+            
+        }
+        
+        
+        
+        let edit_state = &mut self.edit_state;
+        for anim_set in anim_set.iter() {
+            for anim_handle in anim_set.anim_handles.iter() {
+                let Some(anim) = assets.get(anim_handle) else { continue };
+                if let Some(exist) = edit_state.get( anim_handle ) {
+                    
+                } else {
+                    let state = AnimationSetEditState {
+                        list: vec![],
+                    };
+                    edit_state.insert( anim_handle.clone(), Default::default() );
+                }
+                
+                if let Some(anim) = assets.get(anim_handle) {
+                    for (idx,target) in anim.targets.iter().enumerate() {
+                        self.draw_target(ui, idx, target, &selected_rect);
+                    }
+                }
+            }
+        }
+    }
 
     pub fn ui(&mut self, ui:&mut Ui, anim_set:Vec<&TimelineAnimationSet>, assets:&mut ResMut<Assets<TimelineAnimation>> ) {
         let key_size = self.ui_settings.key_size;
+        let left_padding = self.ui_settings.left_padding;
         let max_target_name_width = self.ui_settings.max_target_name_width;
         let focus_time_pad_x = self.ui_settings.focus_time_pad_x;
         let focus_time_pad_y = self.ui_settings.focus_time_pad_y;
@@ -113,7 +170,7 @@ impl TimelineEditor {
         let min_zoom = self.ui_settings.min_zoom;
         let max_zoom = self.ui_settings.max_zoom;
         let ruler_height = self.ui_settings.ruler_height;
-        let frame = Frame::new().fill(Color32::from_gray(20));
+        let mut frame = Frame::new().fill(Color32::from_gray(20));
         frame.show(ui, |ui| {
             let ruler_response = ui.vertical( |ui| {
                 // Ruler (시간 표시)
@@ -171,7 +228,7 @@ impl TimelineEditor {
             let time_string_size = ui.fonts( |r| r.layout_no_wrap( time_string.clone(), FontId::default(), Color32::WHITE).size() );
             let time_label_size = time_string_size + Vec2::new(focus_time_pad_x*2., focus_time_pad_y*2.);
             let one_sec_width = self.zoom * min_msec_width * 10.;
-            let focused_time_x = self.time * one_sec_width + ruler_response.rect.min.x - self.scroll_offset_x;
+            let focused_time_x = self.time * one_sec_width + ruler_response.rect.min.x - self.scroll_offset_x + left_padding;
             let focus_label_rect = Rect::from_min_size( Pos2::new( focused_time_x , ui.min_rect().min.y ), time_label_size );
             let mut focus_time_rect = Rect::from_two_pos(ruler_response.rect.min, ui.max_rect().max);
             let painter = ui.painter().with_clip_rect( focus_time_rect );
@@ -180,12 +237,13 @@ impl TimelineEditor {
             painter.vline( focused_time_x, Rangef::new(ui.min_rect().min.y+1.0 , ui.max_rect().max.y),
                            Stroke::new(3.0, Color32::from_rgba_unmultiplied(79,120,191, 255 )) );
             painter.text( Pos2::new( focused_time_x+focus_time_pad_x, ui.min_rect().min.y+focus_time_pad_y ), egui::Align2::LEFT_TOP, time_string, FontId::default(), Color32::WHITE );
+
             let response = ui.interact( ruler_response.rect, egui::Id::new("focus_time"), Sense::click_and_drag() );
             if response.clicked_by(PointerButton::Primary) || response.dragged_by(PointerButton::Primary) {
                 if let Some(pos) = response.interact_pointer_pos() {
-                    let time = (pos.x - ruler_response.rect.min.x + self.scroll_offset_x)  / one_sec_width;
+                    let time = (pos.x - ruler_response.rect.min.x + self.scroll_offset_x - left_padding)  / one_sec_width;
                     let time = (time * 10.0).round() / 10.0; //첫째자리만 남김
-                    self.time = time;
+                    self.time = time.max(0. );
                 }
             }
 
@@ -283,6 +341,7 @@ impl TimelineEditor {
         //ui.add_space(self.target_name_width);
         let (response,painter) = ui.allocate_painter( Vec2::new(ui.available_width(), ruler_height), Sense::hover() );
         let mut offset = response.rect.min.to_vec2();
+        offset.x += self.ui_settings.left_padding;
 
         //1msec 길이
         let one_msec_width = self.zoom * min_msec_width;
@@ -330,7 +389,7 @@ impl TimelineEditor {
     fn draw_target(
         &mut self,
         ui: &mut egui::Ui,
-        index: usize,
+        handle: Handle<TimelineAnimation>
         target: &TimelineTarget,
         selected_rect:&Option<(bool,Rect)>
     ) {
@@ -338,6 +397,7 @@ impl TimelineEditor {
         let min_msec_width = self.ui_settings.min_msec_width;
         let target_height = self.ui_settings.target_height;
         let stroke_normal = Stroke::new(1.0, Color32::GRAY);
+        let left_padding = self.ui_settings.left_padding;
         let stroke_selected = Stroke::new(1.0, Color32::WHITE);
         let name = target.target[ target.target.len()-1 ].as_str();
         ui.horizontal(|ui| {
@@ -351,7 +411,7 @@ impl TimelineEditor {
                 painter.rect_filled( response.rect, 0., Color32::default() );
             }
             for (i,time) in target.get_times().iter().enumerate() {
-                let x = response.rect.min.x + (time * self.zoom * min_msec_width*10.) - self.scroll_offset_x;
+                let x = response.rect.min.x + (time * self.zoom * min_msec_width*10.) - self.scroll_offset_x + left_padding;
                 let pos = Pos2::new(x, response.rect.min.y + response.rect.height()/2. );
                 if let Some( (shift_pressed,rect) ) = selected_rect {
                     // if rect.contains( pos ) {
