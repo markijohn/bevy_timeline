@@ -126,6 +126,8 @@ impl TimelineTarget {
         let times = map.get("times").ok_or(TimelineError::IncorrectValueType("times not exist"))?;
         let times = times.as_array_f32()?;
         
+        let selected = vec![false; times.len()];
+        
         let seq = map.get("seq").ok_or(TimelineError::IncorrectValueType("keyframes not exist"))?
             .as_array().ok_or(TimelineError::IncorrectValueType("keyframes is not array"))?;
         let seq = if let Some(result) = V::try_resolve_keyframes( typ, seq.as_slice() ) {
@@ -135,6 +137,7 @@ impl TimelineTarget {
         };
         Ok( Self {
             target,
+            selected,
             times,
             seq,
         } )
@@ -142,6 +145,10 @@ impl TimelineTarget {
     
     pub fn get_times(&self) -> &[f32] {
         self.times.as_slice()
+    }
+    
+    pub fn get_times_with_selected(&mut self) -> impl Iterator<Item=(&mut f32,&mut bool)> {
+        self.times.iter_mut().zip(self.selected.iter_mut())
     }
 
     pub fn get_typed<T:AnimatableValue>(&self) -> Result<&[T], TimelineError> {

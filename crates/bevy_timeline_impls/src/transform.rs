@@ -1,6 +1,7 @@
 use std::ops::Deref;
 use bevy_math::Curve;
 use bevy_math::prelude::{EaseFunction};
+use bevy_transform::prelude::Transform;
 use bevy_timeline_runtime::prelude::{AnimatableValue};
 use serde::{Serialize,Deserialize};
 
@@ -37,6 +38,28 @@ impl <V> AnimatableValue for EaseFunctionWrap<V> where V:AnimatableValue {
     }
 }
 
+#[derive(Clone,Default,Serialize,Deserialize)]
+pub struct _RotaTrans {
+    rot : bevy_timeline_runtime::value::Rotation,
+    trans : bevy_timeline_runtime::value::Translation,
+}
+
 pub type Scale = EaseFunctionWrap<bevy_timeline_runtime::value::Scale>;
-pub type Rotation = EaseFunctionWrap<bevy_timeline_runtime::value::Rotation>;
-pub type Translation = EaseFunctionWrap<bevy_timeline_runtime::value::Translation>;
+type Rotation = EaseFunctionWrap<bevy_timeline_runtime::value::Rotation>;
+type Translation = EaseFunctionWrap<bevy_timeline_runtime::value::Translation>;
+
+impl AnimatableValue for _RotaTrans {
+    type Target = Transform;
+
+    fn interpolate(s: f32, start: Self, end: Option<Self>, out: &mut Self::Target) {
+        if let Some(v) = end {
+            bevy_timeline_runtime::value::Rotation::interpolate(s, start.rot, Some(v.rot), out);
+            bevy_timeline_runtime::value::Translation::interpolate(s, start.trans, Some(v.trans), out);
+        } else {
+            bevy_timeline_runtime::value::Rotation::interpolate(s, start.rot, None, out);
+            bevy_timeline_runtime::value::Translation::interpolate(s, start.trans, None, out);
+        }
+    }
+}
+
+pub type RotaTrans = EaseFunctionWrap<_RotaTrans>;

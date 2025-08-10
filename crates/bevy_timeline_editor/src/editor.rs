@@ -18,47 +18,47 @@ fn format_f32(value: f32) -> String {
 }
 
 pub struct TimelineEditorSettings {
-    min_msec_width:f32,
-    default_target_name_width:f32,
-    max_target_name_width:f32,
+    pub min_msec_width:f32,
+    pub default_target_name_width:f32,
+    pub max_target_name_width:f32,
 
-    ruler_height:f32,
-    target_height:f32,
+    pub ruler_height:f32,
+    pub target_height:f32,
 
-    key_size:f32,
+    pub key_size:f32,
 
-    left_padding:f32,
+    pub left_padding:f32,
 
-    min_zoom:f32,
-    max_zoom:f32,
+    pub min_zoom:f32,
+    pub max_zoom:f32,
 
-    time_label_size:f32,
+    pub time_label_size:f32,
 
-    focus_time_pad_x:f32,
-    focus_time_pad_y:f32,
+    pub focus_time_pad_x:f32,
+    pub focus_time_pad_y:f32,
 }
 
 impl Default for TimelineEditorSettings {
     fn default() -> Self {
         Self {
             min_msec_width:1.0, //ruler min millisecond width
-            default_target_name_width: 100.,
-            max_target_name_width: 300.,
+            default_target_name_width: 100., //timeline target name's width
+            max_target_name_width: 300., //timeline target name's max width
 
             ruler_height: 30., //ruler height
             target_height: 20., //target height(keyframe line height)
 
             key_size: 4., //key circle size
 
-            left_padding: 20. ,
+            left_padding: 10. , //timeline left padding
 
-            min_zoom: 3.0,
-            max_zoom: 15.,
+            min_zoom: 3.0, //minimal zoom
+            max_zoom: 15., //max zoom
 
             time_label_size: 10., //time label size on ruler
 
-            focus_time_pad_x: 6.,
-            focus_time_pad_y: 2.,
+            focus_time_pad_x: 6., //time label padding(left,right)
+            focus_time_pad_y: 2., //time label padding(top,bottom)
         }
     }
 }
@@ -120,45 +120,6 @@ impl TimelineEditor {
     fn new() -> Self {
         Default::default()
     }
-    
-    fn mapping_state(&mut self,anim_set:&[TimelineAnimationSet], assets:&mut ResMut<Assets<TimelineAnimation>>) {
-        let anim_set_list:Vec<Vec<&TimelineAnimation>> = anim_set.iter().map( |v| {
-            v.anim_handles.iter()
-                .map( |handle| {
-                    assets.get(handle)
-                })
-                .filter( |v| v.is_some() )
-                .map( |v| v.unwrap() )
-                .collect()
-        }).collect();
-        
-        for anim_set in anim_set_list {
-            
-        }
-        
-        
-        
-        let edit_state = &mut self.edit_state;
-        for anim_set in anim_set.iter() {
-            for anim_handle in anim_set.anim_handles.iter() {
-                let Some(anim) = assets.get(anim_handle) else { continue };
-                if let Some(exist) = edit_state.get( anim_handle ) {
-                    
-                } else {
-                    let state = AnimationSetEditState {
-                        list: vec![],
-                    };
-                    edit_state.insert( anim_handle.clone(), Default::default() );
-                }
-                
-                if let Some(anim) = assets.get(anim_handle) {
-                    for (idx,target) in anim.targets.iter().enumerate() {
-                        self.draw_target(ui, idx, target, &selected_rect);
-                    }
-                }
-            }
-        }
-    }
 
     pub fn ui(&mut self, ui:&mut Ui, anim_set:Vec<&TimelineAnimationSet>, assets:&mut ResMut<Assets<TimelineAnimation>> ) {
         let key_size = self.ui_settings.key_size;
@@ -197,9 +158,9 @@ impl TimelineEditor {
 
                         for anim_set in anim_set.iter() {
                             for anim_handle in anim_set.anim_handles.iter() {
-                                if let Some(anim) = assets.get(anim_handle) {
-                                    for (idx,target) in anim.targets.iter().enumerate() {
-                                        self.draw_target(ui, idx, target, &selected_rect);
+                                if let Some(anim) = assets.get_mut(anim_handle) {
+                                    for (idx,mut target) in anim.targets.iter_mut().enumerate() {
+                                        self.draw_target(ui, idx, &mut target, &selected_rect);
                                     }
                                 }
                             }
@@ -389,8 +350,8 @@ impl TimelineEditor {
     fn draw_target(
         &mut self,
         ui: &mut egui::Ui,
-        handle: Handle<TimelineAnimation>
-        target: &TimelineTarget,
+        index: usize,
+        target: &mut TimelineTarget,
         selected_rect:&Option<(bool,Rect)>
     ) {
         let key_size = self.ui_settings.key_size;
@@ -400,8 +361,9 @@ impl TimelineEditor {
         let left_padding = self.ui_settings.left_padding;
         let stroke_selected = Stroke::new(1.0, Color32::WHITE);
         let name = target.target[ target.target.len()-1 ].as_str();
+        let name = egui::Label::new(name).selectable(false).truncate();
         ui.horizontal(|ui| {
-            ui.add_sized(Vec2::new(self.target_name_width, target_height), egui::Label::new(name).selectable(false).truncate() );
+            ui.add_sized(Vec2::new(self.target_name_width, target_height), name );
         
             // 오른쪽: 키프레임 표시
             let (response,painter) = ui.allocate_painter( Vec2::new(ui.available_width(), target_height), Sense::hover() );
@@ -410,17 +372,17 @@ impl TimelineEditor {
             } else {
                 painter.rect_filled( response.rect, 0., Color32::default() );
             }
-            for (i,time) in target.get_times().iter().enumerate() {
-                let x = response.rect.min.x + (time * self.zoom * min_msec_width*10.) - self.scroll_offset_x + left_padding;
+            for (time,selected) in target.get_times_with_selected() {
+                let x = response.rect.min.x + (*time * self.zoom * min_msec_width*10.) - self.scroll_offset_x + left_padding;
                 let pos = Pos2::new(x, response.rect.min.y + response.rect.height()/2. );
                 if let Some( (shift_pressed,rect) ) = selected_rect {
-                    // if rect.contains( pos ) {
-                    //     keyframe.selected = true;
-                    // } else {
-                    //     if !shift_pressed {
-                    //         keyframe.selected = false;
-                    //     }
-                    // }
+                    if rect.contains( pos ) {
+                        *selected = !*selected;
+                    } else {
+                        if !shift_pressed {
+                            *selected = false;
+                        }
+                    }
                 }
                 if x < response.rect.min.x {
                     continue;
@@ -430,57 +392,13 @@ impl TimelineEditor {
                     //break; //for selected_rect
                 }
                 
-                // let stroke = if keyframe.selected {
-                //     stroke_selected
-                // } else {
-                //     stroke_normal
-                // };
-                let stroke = stroke_normal;
-                
+                let stroke = if *selected {
+                    stroke_selected
+                } else {
+                    stroke_normal
+                };
                 painter.circle_stroke( pos, key_size, stroke );
             }
-        
-        
         });
-    }
-
-
-    fn select_keys(&mut self, shift:bool, rect:Rect) {
-
-        // let circle_rect = Rect::from_center_size(pos, Vec2::new(KEY_SIZE * 2.0, KEY_SIZE * 2.0));
-        //
-        // let click_response = ui.interact(circle_rect, ui.id(), Sense::click());
-        // ui.input( |cx| {
-        //     if cx.modifiers.shift {
-        //         keyframe.selected = !keyframe.selected;
-        //     } else {
-        //         single_click = Some( i );
-        //     }
-        // });
-        //
-        // // 마우스 입력 처리 (키프레임 선택/다중 선택 등)
-        // ui.input( |cx| {
-        //     // if pointer.any_click() && ui.rect_contains_pointer(rect) {
-        //     //     if is_selected {
-        //     //         self.selected_keyframes.retain(|&x| x != (target_idx, i));
-        //     //     } else {
-        //     //         self.selected_keyframes.push((target_idx, i));
-        //     //     }
-        //     // }
-        //
-        //     // if let Some(pointer_pos) = pointer.interact_pos() {
-        //     //     // 클릭한 위치가 키프레임 근처인지 확인
-        //     //     let distance = (pointer_pos - pos).length();
-        //     //     if distance < 10.0 {
-        //     //         if is_selected {
-        //     //             // 이미 선택된 경우, 선택 해제
-        //     //             // self.selected_keyframes.retain(|&x| x != (target_idx, i));
-        //     //         } else {
-        //     //             // 선택되지 않은 경우, 선택
-        //     //             // self.selected_keyframes.push((target_idx, i));
-        //     //         }
-        //     //     }
-        //     // }
-        // });
     }
 }
