@@ -3,8 +3,9 @@ use bevy::app::{App, PreUpdate, Startup, Update};
 use bevy::DefaultPlugins;
 use bevy::prelude::*;
 use bevy::winit::WinitSettings;
-use bevy_egui::egui::{self, Frame, Pos2, Shape, Stroke, Color32, Rect, Vec2, FontId, Widget, Sense, PointerButton, PointerState, Id, Rangef, Align, StrokeKind, ScrollArea, Slider, UiBuilder, Ui, InnerResponse};
+use bevy_egui::egui::{self, Frame, Pos2, Shape, Stroke, Color32, Rect, Vec2, FontId, Widget, Sense, PointerButton, PointerState, Id, Rangef, Align, StrokeKind, ScrollArea, Slider, UiBuilder, Ui, InnerResponse, CollapsingHeader};
 use bevy_egui::{EguiContexts, EguiPlugin};
+use egui_plot::{Line, Plot, PlotPoints};
 use bevy_timeline_runtime::prelude::{TimelineAnimation, TimelineAnimationSet, TimelineTarget};
 
 fn format_f32(value: f32) -> String {
@@ -362,6 +363,7 @@ impl TimelineEditor {
         let stroke_selected = Stroke::new(1.0, Color32::WHITE);
         let name = target.target[ target.target.len()-1 ].as_str();
         let name = egui::Label::new(name).selectable(false).truncate();
+
         ui.horizontal(|ui| {
             ui.add_sized(Vec2::new(self.target_name_width, target_height), name );
         

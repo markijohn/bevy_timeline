@@ -13,14 +13,14 @@ keywords = ["bevy", "animation"]
 
 [dependencies]
 bevy = { version = "0.16"}
-bevy_egui = { version = "0.35.1"}
+bevy_egui = { version = "0.36.0"}
 bevy_mod_outline = "0.10"
 transform-gizmo-bevy = "0.6"
 bevy_timeline_impls = { path="../bevy_timeline_impls"}
 bevy_timeline_runtime = { path= "../bevy_timeline_runtime" }
 serde_json = "1"
 rfd = "0.15.3"
-
+egui_plot = "0.33.0"
 
 [profile.dev]
 opt-level = 1
