@@ -3,11 +3,15 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::math::vec2;
 use bevy::prelude::*;
 
+use bevy_egui::{input::egui_wants_any_pointer_input};
+
 // https://bevy-cheatbook.github.io/cookbook/pan-orbit-camera.html
 pub struct PanOrbitCameraPlugin;
 impl Plugin for PanOrbitCameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, update_camera);
+        //app.add_systems(Update, update_camera);
+        app.add_systems(Update, update_camera.run_if(not(egui_wants_any_pointer_input)));
+        
     }
 }
 

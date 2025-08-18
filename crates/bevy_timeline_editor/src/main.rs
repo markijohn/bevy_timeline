@@ -249,6 +249,9 @@ fn draw_egui(
                         }
                     }
                 }
+                if ui.button("Mapper").clicked() {
+                    
+                }
             });
 
         }).response.rect.height();
