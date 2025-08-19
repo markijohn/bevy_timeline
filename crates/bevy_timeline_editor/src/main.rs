@@ -16,6 +16,7 @@ use crate::editor::TimelineEditor;
 mod camera;
 mod picking;
 mod editor;
+mod sample_scene;
 
 //type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
 type TimelineSet = (DefaultTransformSet,);
@@ -99,77 +100,6 @@ fn setup(
     // Disable the automatic creation of a primary context to set it up manually for the camera we need.
     egui_global_settings.auto_create_primary_context = false;
 
-    let debug_material = materials.add(StandardMaterial {
-        base_color_texture: Some(images.add(uv_debug_texture())),
-        ..default()
-    });
-
-    let shapes = [
-        meshes.add(Cuboid::default()),
-        meshes.add(Tetrahedron::default()),
-        meshes.add(Capsule3d::default()),
-        meshes.add(Torus::default()),
-        meshes.add(Cylinder::default()),
-        meshes.add(Cone::default()),
-        meshes.add(ConicalFrustum::default()),
-        meshes.add(Sphere::default().mesh().ico(5).unwrap()),
-        meshes.add(Sphere::default().mesh().uv(32, 18)),
-    ];
-
-    let extrusions = [
-        meshes.add(Extrusion::new(Rectangle::default(), 1.)),
-        meshes.add(Extrusion::new(Capsule2d::default(), 1.)),
-        meshes.add(Extrusion::new(Annulus::default(), 1.)),
-        meshes.add(Extrusion::new(Circle::default(), 1.)),
-        meshes.add(Extrusion::new(Ellipse::default(), 1.)),
-        meshes.add(Extrusion::new(RegularPolygon::default(), 1.)),
-        meshes.add(Extrusion::new(Triangle2d::default(), 1.)),
-    ];
-
-    let num_shapes = shapes.len();
-
-    for (i, shape) in shapes.into_iter().enumerate() {
-        commands.spawn((
-            Mesh3d(shape),
-            MeshMaterial3d(debug_material.clone()),
-            Transform::from_xyz(
-                -SHAPES_X_EXTENT / 2. + i as f32 / (num_shapes - 1) as f32 * SHAPES_X_EXTENT,
-                2.0,
-                Z_EXTENT / 2.,
-            )
-                .with_rotation(Quat::from_rotation_x(-PI / 4.)),
-            Shape,
-        ));
-    }
-
-    let num_extrusions = extrusions.len();
-
-    for (i, shape) in extrusions.into_iter().enumerate() {
-        commands.spawn((
-            Mesh3d(shape),
-            MeshMaterial3d(debug_material.clone()),
-            Transform::from_xyz(
-                -EXTRUSION_X_EXTENT / 2.
-                    + i as f32 / (num_extrusions - 1) as f32 * EXTRUSION_X_EXTENT,
-                2.0,
-                -Z_EXTENT / 2.,
-            )
-                .with_rotation(Quat::from_rotation_x(-PI / 4.)),
-            Shape,
-
-            // Pick,
-            OutlineVolume {
-                visible: false,
-                colour: Color::WHITE,
-                width: 2.0,
-            },
-            picking::PickSelection { is_selected: true },
-            OutlineStencil::default(),
-            OutlineMode::default(),
-            ComputedOutline::default(),
-        ));
-    }
-
     commands.spawn((
         PointLight {
             shadows_enabled: true,
@@ -179,12 +109,6 @@ fn setup(
             ..default()
         },
         Transform::from_xyz(8.0, 16.0, 8.0),
-    ));
-
-    // ground plane
-    commands.spawn((
-        Mesh3d(meshes.add(Plane3d::default().mesh().size(50.0, 50.0).subdivisions(10))),
-        MeshMaterial3d(materials.add(Color::from(bevy::color::palettes::basic::SILVER))),
     ));
 
     //World camera
