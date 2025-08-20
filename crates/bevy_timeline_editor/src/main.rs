@@ -6,12 +6,13 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
-use bevy_egui::egui::Widget;
+use bevy_egui::egui::{Id, Popup, PopupCloseBehavior, Widget};
 use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
 use transform_gizmo_bevy::*;
 use bevy_mod_outline::*;
 use crate::editor::TimelineEditor;
+use crate::sample_scene::{SampleScenePlugin, SpawnSampleScene};
 
 mod camera;
 mod picking;
@@ -40,6 +41,7 @@ fn main() {
             ..default()
         })
         .add_plugins(TimelinePlugin::<TimelineSet>::new())
+        .add_plugins(SampleScenePlugin)
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, draw_egui)
     .run();
@@ -48,41 +50,6 @@ fn main() {
 #[derive(Resource,Default)]
 pub struct AnimationData(Vec<Handle<TimelineAnimationSet>>);
 
-/// Creates a colorful test pattern
-fn uv_debug_texture() -> Image {
-    const TEXTURE_SIZE: usize = 8;
-
-    let mut palette: [u8; 32] = [
-        255, 102, 159, 255, 255, 159, 102, 255, 236, 255, 102, 255, 121, 255, 102, 255, 102, 255,
-        198, 255, 102, 198, 255, 255, 121, 102, 255, 255, 236, 102, 255, 255,
-    ];
-
-    let mut texture_data = [0; TEXTURE_SIZE * TEXTURE_SIZE * 4];
-    for y in 0..TEXTURE_SIZE {
-        let offset = TEXTURE_SIZE * y * 4;
-        texture_data[offset..(offset + TEXTURE_SIZE * 4)].copy_from_slice(&palette);
-        palette.rotate_right(4);
-    }
-
-    Image::new_fill(
-        Extent3d {
-            width: TEXTURE_SIZE as u32,
-            height: TEXTURE_SIZE as u32,
-            depth_or_array_layers: 1,
-        },
-        TextureDimension::D2,
-        &texture_data,
-        TextureFormat::Rgba8UnormSrgb,
-        RenderAssetUsages::RENDER_WORLD,
-    )
-}
-
-#[derive(Component)]
-struct Shape;
-
-const SHAPES_X_EXTENT: f32 = 14.0;
-const EXTRUSION_X_EXTENT: f32 = 16.0;
-const Z_EXTENT: f32 = 5.0;
 
 fn setup(
     mut gizmo_options: ResMut<GizmoOptions>,
@@ -144,8 +111,11 @@ fn setup(
 
 fn draw_egui(
     time: Res<Time>,
+    mut cmds: Commands,
+    sample_scene_spawner: Res<SpawnSampleScene>,
     mut anim_datas:ResMut<AnimationData>,
     mut timeline_editor: ResMut<TimelineEditor>,
+    mut scene_assets: ResMut<Assets<Scene>>,
     mut anim_sets:ResMut<Assets<TimelineAnimationSet>>,
     mut anim_assets:ResMut<Assets<TimelineAnimation>>,
     mut asset_server: ResMut<AssetServer>,
@@ -160,9 +130,31 @@ fn draw_egui(
         .max_height(30.0)
         .show(ctx_mut, |ui| {
             ui.horizontal(|ui| {
-                if ui.button("New").clicked() {
+                let response = ui.button("File");
+                Popup::menu(&response)
+                    .id( Id::new("file_popup") )
+                    .gap(4.)
+                    .close_behavior(PopupCloseBehavior::CloseOnClick)
+                    .show( |ui| {
+                        ui.set_max_width(200.);
+                        if ui.button("Open file").clicked() {
+                            if let Some(files) = rfd::FileDialog::new().pick_files() {
+                                for file in files {
+                                    let handle:Handle<Scene> = asset_server.load( format!( "{}#Scene0", file.to_str().unwrap() ) );
 
-                }
+                                    cmds.spawn( SceneRoot(handle) );
+                                }
+                            }
+                        }
+                        ui.menu_button("Load sample", |ui| {
+                            if ui.button("Shapes").clicked() {
+                                cmds.run_system( sample_scene_spawner.shapes_fn_id );
+                            }
+                            if ui.button("Human").clicked() {
+                                cmds.run_system( sample_scene_spawner.human_fn_id );
+                            }
+                        })
+                    });
                 if ui.button("Load").clicked() {
                     if let Some(files) = rfd::FileDialog::new().pick_files() {
                         
