@@ -6,7 +6,7 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
-use bevy_egui::egui::{Id, Popup, PopupCloseBehavior, Widget};
+use bevy_egui::egui::{Id, Popup, PopupCloseBehavior, ScrollArea, Widget};
 use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
 use transform_gizmo_bevy::*;
@@ -176,6 +176,7 @@ fn draw_egui(
         .max_height(1000.0)
         .resizable(true)
         .show(ctx_mut, |ui| {
+            ui.set_height(ui.available_height());
             ui.horizontal(|ui| {
                 let mut datas = Vec::new();
                 for lazy_anim_set in anim_datas.0.iter() {
@@ -188,17 +189,22 @@ fn draw_egui(
             egui::Separator::default().spacing(0.).ui( ui );
         }).response.rect.height();
 
-    let mut left = egui::SidePanel::left("timeline_entities")
-        .min_width(200.)
-        .max_width(1000.)
-        .resizable(true)
-        .show(ctx_mut, |ui| {
-
-        }).response.rect.width();
+    // let mut left = egui::SidePanel::left("timeline_entities")
+    //     .min_width(200.)
+    //     .max_width(1000.)
+    //     .resizable(true)
+    //     .show(ctx_mut, |ui| {
+    //
+    //     }).response.rect.width();
+    let mut left = 0.;
 
     let mut right = egui::SidePanel::right("timeline_attr")
         .show(ctx_mut, |ui| {
+            ui.set_width(ui.available_width());
+            ScrollArea::vertical()
+                .show(ui, |ui| {
 
+                });
         }).response.rect.width();
 
     // Scale from logical units to physical units.
