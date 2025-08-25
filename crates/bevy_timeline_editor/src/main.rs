@@ -6,18 +6,20 @@ use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
-use bevy_egui::egui::{Id, Popup, PopupCloseBehavior, ScrollArea, Widget};
+use bevy_egui::egui::{Frame, Id, Margin, Popup, PopupCloseBehavior, ScrollArea, Widget};
 use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
 use transform_gizmo_bevy::*;
 use bevy_mod_outline::*;
 use crate::editor::TimelineEditor;
+use crate::entity_tree::{TargetList, TargetRefreshFn, TimelineTargetListPlugin, TreeNode};
 use crate::sample_scene::{SampleScenePlugin, SpawnSampleScene};
 
 mod camera;
 mod picking;
 mod editor;
 mod sample_scene;
+mod entity_tree;
 
 //type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
 type TimelineSet = (DefaultTransformSet,);
@@ -42,6 +44,7 @@ fn main() {
         })
         .add_plugins(TimelinePlugin::<TimelineSet>::new())
         .add_plugins(SampleScenePlugin)
+        .add_plugins(TimelineTargetListPlugin)
         .add_systems(Startup, setup)
         .add_systems(EguiPrimaryContextPass, draw_egui)
     .run();
@@ -68,6 +71,7 @@ fn setup(
     egui_global_settings.auto_create_primary_context = false;
 
     commands.spawn((
+        Name::new("DefaultPointLight"),
         PointLight {
             shadows_enabled: true,
             intensity: 10_000_000.,
@@ -111,6 +115,8 @@ fn setup(
 fn draw_egui(
     time: Res<Time>,
     mut cmds: Commands,
+    target_refresh_fn: Res<TargetRefreshFn>,
+    target_list: Res<TargetList>,
     sample_scene_spawner: Res<SpawnSampleScene>,
     mut anim_datas:ResMut<AnimationData>,
     mut timeline_editor: ResMut<TimelineEditor>,
@@ -125,8 +131,6 @@ fn draw_egui(
     let ctx_mut = egui_context.ctx_mut()?;
 
     let mut top = egui::TopBottomPanel::top("timeline_top_panel")
-        .min_height(30.)
-        .max_height(30.0)
         .show(ctx_mut, |ui| {
             ui.horizontal(|ui| {
                 let response = ui.button("File");
@@ -172,8 +176,9 @@ fn draw_egui(
         }).response.rect.height();
 
     let mut bottom = egui::TopBottomPanel::bottom("timeline_bottom_panel")
-        .min_height(200.)
-        .max_height(1000.0)
+        .frame( Frame::new()
+            .inner_margin(Margin::symmetric(0, 0))
+            .fill(ctx_mut.theme().default_visuals().panel_fill) )
         .resizable(true)
         .show(ctx_mut, |ui| {
             ui.set_height(ui.available_height());
@@ -201,9 +206,33 @@ fn draw_egui(
     let mut right = egui::SidePanel::right("timeline_attr")
         .show(ctx_mut, |ui| {
             ui.set_width(ui.available_width());
+            if ui.button("Refresh").clicked() {
+                cmds.run_system( target_refresh_fn.0 );
+            }
+
+            fn recurrsive_tree(ui:&mut egui::Ui, tree_node:&TreeNode) {
+                if tree_node.children.len() == 0 {
+                    ui.label(tree_node.name.as_str());
+                } else {
+                    ui.collapsing(tree_node.name.as_str(), |ui| {
+                        for child in tree_node.children.iter() {
+                            recurrsive_tree(ui, child);
+                        }
+                    });
+                }
+            }
             ScrollArea::vertical()
                 .show(ui, |ui| {
-
+                    ui.collapsing("Transform", |ui| {
+                        for child in target_list.transform.iter() {
+                            recurrsive_tree(ui, child);
+                        }
+                    }).openness = 1.0;
+                    ui.collapsing("PointLight", |ui| {
+                        for light in target_list.point_light.iter() {
+                            ui.label( &light.name );
+                        }
+                    }).openness = 1.0;
                 });
         }).response.rect.width();
 
