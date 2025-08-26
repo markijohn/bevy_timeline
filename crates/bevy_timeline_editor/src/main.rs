@@ -209,6 +209,7 @@ fn draw_egui(
             if ui.button("Refresh").clicked() {
                 cmds.run_system( target_refresh_fn.0 );
             }
+            ui.separator();
 
             fn recurrsive_tree(ui:&mut egui::Ui, tree_node:&TreeNode) {
                 if tree_node.children.len() == 0 {
