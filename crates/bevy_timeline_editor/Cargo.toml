@@ -12,11 +12,11 @@ keywords = ["bevy", "animation"]
 
 
 [dependencies]
-bevy = { version = "0.16", features=["jpeg"]}
+bevy = { version = "0.16", features=["jpeg", "default_font"]}
 bevy_egui = { version = "0.36.0"}
 bevy_mod_outline = "0.10"
 transform-gizmo-bevy = "0.6"
-bevy_mod_billboard = {git = "https://github.com/mcobzarenco/bevy_mod_billboard.git"}
+bevy_mod_billboard = {git = "https://github.com/mcobzarenco/bevy_mod_billboard.git", branch = "migrate-0.16"}
 bevy_timeline_impls = { path="../bevy_timeline_impls"}
 bevy_timeline_runtime = { path= "../bevy_timeline_runtime" }
 serde_json = "1"

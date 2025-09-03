@@ -34,6 +34,7 @@ fn main() {
                              ..default()
                          })
         )
+        .add_plugins(bevy_mod_billboard::prelude::BillboardPlugin)
         .add_plugins(camera::PanOrbitCameraPlugin)
         .add_plugins(EguiPlugin::default())
         .add_plugins(TransformGizmoPlugin)
@@ -57,6 +58,7 @@ pub struct AnimationData(Vec<Handle<TimelineAnimationSet>>);
 fn setup(
     mut gizmo_options: ResMut<GizmoOptions>,
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut egui_global_settings: ResMut<EguiGlobalSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut images: ResMut<Assets<Image>>,
@@ -80,6 +82,7 @@ fn setup(
             ..default()
         },
         Transform::from_xyz(8.0, 16.0, 8.0),
+        Visibility::default()
     ));
 
     //World camera
@@ -110,6 +113,7 @@ fn setup(
             ..default()
         },
     ));
+
 }
 
 fn draw_egui(
@@ -145,7 +149,10 @@ fn draw_egui(
                                 for file in files {
                                     let handle:Handle<Scene> = asset_server.load( format!( "{}#Scene0", file.to_str().unwrap() ) );
 
-                                    cmds.spawn( SceneRoot(handle) );
+                                    cmds.spawn( (
+                                        SceneRoot(handle),
+                                        Visibility::default()
+                                    ) );
                                 }
                             }
                         }
@@ -224,12 +231,12 @@ fn draw_egui(
             }
             ScrollArea::vertical()
                 .show(ui, |ui| {
-                    ui.collapsing("Transform", |ui| {
+                    ui.collapsing(format!("Transform ({})", target_list.transform.len() ), |ui| {
                         for child in target_list.transform.iter() {
                             recurrsive_tree(ui, child);
                         }
                     }).openness = 1.0;
-                    ui.collapsing("PointLight", |ui| {
+                    ui.collapsing(format!("PointLight ({})",target_list.point_light.len()), |ui| {
                         for light in target_list.point_light.iter() {
                             ui.label( &light.name );
                         }

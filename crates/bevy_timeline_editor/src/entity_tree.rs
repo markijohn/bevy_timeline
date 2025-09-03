@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use bevy::app::{App, Plugin};
+use bevy::color::Color;
 use bevy::ecs::system::SystemId;
-use bevy::prelude::{Children, Commands, Entity, Event, Name, PointLight, Query, ResMut, Resource, SpotLight, Transform, With};
-
+use bevy::math::Vec3;
+use bevy::prelude::{Children, Commands, Entity, Event, Name, PointLight, Query, ResMut, Resource, SpotLight, Transform, With, Without};
+use bevy::text::{JustifyText, TextColor, TextFont, TextLayout};
+use bevy_mod_billboard::prelude::*;
 
 pub struct TreeNode {
     pub name : String,
@@ -27,12 +30,13 @@ impl Plugin for TimelineTargetListPlugin {
     fn build(&self, app: &mut App) {
         let target_refresh = app.world_mut().register_system( make_treenode );
         app.insert_resource( TargetRefreshFn(target_refresh) );
+        app.add_systems( bevy::prelude::Update, billboard_scaler_simple );
         app.insert_resource( TargetList { transform:Vec::new(), point_light:Vec::new() , spot_light : Vec::new() } );
     }
 }
 
 fn make_treenode(
-    mut commands : Commands,
+    mut cmds : Commands,
     mut target_list : ResMut<TargetList>,
     mut query_transform : Query<(&Name, Entity, Option<&Children>), With<Transform>>,
     mut query_point_light : Query<(&Name, Entity), With<PointLight>>,
@@ -87,10 +91,22 @@ fn make_treenode(
 
     // 재귀적으로 트리를 구성하는 함수
     fn build_tree_recursive(
+        cmds:&mut Commands,
         entity: Entity,
         entity_map: &HashMap<Entity, (&Name, Option<&Children>)>
     ) -> Option<TreeNode> {
         if let Some((name, children_opt)) = entity_map.get(&entity) {
+            let mut entity_cmd = cmds.entity(entity);
+            entity_cmd.with_child( (
+                BillboardText::new(name.as_str()),
+                // TextFont::default().with_font_size(60.0),
+                BillboardDepth(false),
+                TextColor(Color::WHITE),
+                Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(0.0085)),
+                TextLayout::new_with_justify(JustifyText::Center),
+            ));
+
+
             let mut tree_node = TreeNode {
                 name: name.to_string(),
                 entity,
@@ -100,7 +116,7 @@ fn make_treenode(
             // 자식 엔티티들을 재귀적으로 처리
             if let Some(children) = children_opt {
                 for child_entity in children.iter() {
-                    if let Some(child_node) = build_tree_recursive(*child_entity, entity_map) {
+                    if let Some(child_node) = build_tree_recursive(cmds, *child_entity, entity_map) {
                         tree_node.children.push(child_node);
                     }
                 }
@@ -114,8 +130,25 @@ fn make_treenode(
 
     // 루트 엔티티들부터 시작해서 트리 구성
     for root_entity in root_entities {
-        if let Some(root_node) = build_tree_recursive(root_entity, &entity_map) {
+        if let Some(root_node) = build_tree_recursive(&mut cmds,root_entity, &entity_map) {
             target_list.transform.push(root_node);
+        }
+    }
+}
+
+// 또는 더 간단한 버전 (고정 base_scale 사용)
+fn billboard_scaler_simple(
+    mut query: Query<&mut Transform, With<BillboardText>>,
+    //camera_query: Query<&Transform, (With<bevy::prelude::Camera>, Without<BillboardText>)>,
+    camera_query: bevy::prelude::Query<(&Transform,&bevy::prelude::Camera3d), Without<BillboardText>>,
+) {
+    const BASE_SCALE:f32 = 0.00085;
+
+    if let Ok( (camera_transform,_) ) = camera_query.single() {
+        for mut transform in query.iter_mut() {
+            let distance = camera_transform.translation.distance(transform.translation);
+            let scale_factor = distance * BASE_SCALE;
+            transform.scale = Vec3::splat(scale_factor);
         }
     }
 }
