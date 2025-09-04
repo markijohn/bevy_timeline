@@ -20,6 +20,7 @@ mod picking;
 mod editor;
 mod sample_scene;
 mod entity_tree;
+mod shader;
 
 //type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
 type TimelineSet = (DefaultTransformSet,);

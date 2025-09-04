@@ -8,9 +8,70 @@ use bevy::{
 use bevy::app::{App, Plugin};
 use bevy::color::Color;
 use bevy::ecs::system::{SystemId, SystemParamItem};
+use bevy::input::keyboard::KeyboardInput;
 use bevy::math::Vec3;
 use bevy::text::{JustifyText, TextColor, TextFont, TextLayout};
 use bevy_mod_billboard::prelude::*;
+use crate::shader::top::*;
+
+#[derive(Clone, Copy)]
+pub struct LockAxis {
+    pub x: bool,
+    pub y: bool,
+    pub z: bool,
+}
+
+impl Default for LockAxis {
+    fn default() -> Self {
+        Self {
+            x: false,
+            y: false,
+            z: false,
+        }
+    }
+}
+
+impl LockAxis {
+    pub fn all() -> Self {
+        Self { x: true, y: true, z: true }
+    }
+
+    pub fn none() -> Self {
+        Self { x: false, y: false, z: false }
+    }
+
+    pub fn only_x() -> Self {
+        Self { x: true, y: false, z: false }
+    }
+
+    pub fn only_y() -> Self {
+        Self { x: false, y: true, z: false }
+    }
+
+    pub fn only_z() -> Self {
+        Self { x: false, y: false, z: true }
+    }
+
+    pub fn except_x() -> Self {
+        Self { x: false, y: true, z: true }
+    }
+
+    pub fn except_y() -> Self {
+        Self { x: true, y: false, z: true }
+    }
+
+    pub fn except_z() -> Self {
+        Self { x: true, y: true, z: false }
+    }
+}
+
+#[derive(Resource, Default)]
+pub enum MarkControlStatus {
+    #[default]
+    None,
+    Translation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Vec3)> },
+    Rotation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Quat)> },
+}
 
 pub struct TreeNode {
     pub name : String,
@@ -28,46 +89,21 @@ pub struct TargetList {
     pub spot_light : Vec<TreeNode>,
 }
 
-
 #[derive(Resource)]
 struct MarkResource {
     mark_mesh : Handle<Mesh>,
-    // col_idle : Handle<StandardMaterial>,
-    // col_sel : Handle<StandardMaterial>
     col_idle : Handle<AlwaysTopMaterial>,
     col_sel : Handle<AlwaysTopMaterial>
 }
+
+#[derive(Component)]
+struct SelectedMark;
 
 #[derive(Component)]
 struct MarkTextEntity(Entity);
 
 pub struct TimelineTargetListPlugin;
 
-pub type AlwaysTopMaterial = ExtendedMaterial<StandardMaterial, AlwaysOnTopExt>;
-
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone, Default)]
-struct AlwaysOnTopExt {
-    _name:()
-}
-
-impl MaterialExtension for AlwaysOnTopExt {
-    fn fragment_shader() -> ShaderRef {
-        ShaderRef::Default
-    }
-
-    fn specialize(
-        _pipeline: &bevy::pbr::MaterialExtensionPipeline,
-        descriptor: &mut RenderPipelineDescriptor,
-        _layout: &MeshVertexBufferLayoutRef,
-        _key: MaterialExtensionKey<Self>,
-    ) -> Result<(), SpecializedMeshPipelineError> {
-        if let Some(ds) = &mut descriptor.depth_stencil {
-            ds.depth_compare = CompareFunction::Always; // 깊이 테스트 무조건 통과
-            ds.depth_write_enabled = false;             // 깊이 버퍼에 기록 안 함
-        }
-        Ok(())
-    }
-}
 
 impl Plugin for TimelineTargetListPlugin {
     fn build(&self, app: &mut App) {
@@ -203,7 +239,17 @@ fn make_treenode(
                     Transform::from_xyz(0.0, 0.0, 0.0),
                     MarkTextEntity(text_entity),
                     Visibility::Visible
-                ) );
+                ) )
+                .observe( |selected:Trigger<OnAdd,SelectedMark>, mark : Res<MarkResource>, mut query:Query<&mut MeshMaterial3d<AlwaysTopMaterial>>| {
+                    if let Ok(mut e) = query.get_mut( selected.target() ) {
+                        e.0 = mark.col_sel.clone();
+                    }
+                })
+                .observe( |selected:Trigger<OnRemove,SelectedMark>, mark : Res<MarkResource>, mut query:Query<&mut MeshMaterial3d<AlwaysTopMaterial>>| {
+                    if let Ok(mut e) = query.get_mut( selected.target() ) {
+                        e.0 = mark.col_idle.clone();
+                    }
+                });
                 // .observe( |over:Trigger<Pointer<Over>>, mut query:Query<&MarkTextEntity>, mut text_query:Query<&mut Visibility, With<BillboardText>>| {
                 //     let text_entity = query.get( over.target ).unwrap().0;
                 //     let mut visibility = text_query.get_mut( text_entity).unwrap();
@@ -221,7 +267,7 @@ fn make_treenode(
                 TextColor(Color::WHITE),
                 Transform::from_xyz(0.0, 0.0, 0.0).with_scale(Vec3::splat(0.0085)),
                 TextLayout::new_with_justify(JustifyText::Center),
-                bevy::prelude::Visibility::Hidden
+                Visibility::Hidden
             ));
 
 
@@ -285,76 +331,257 @@ fn billboard_fit_scale(
 
 use bevy::prelude::{Res,ButtonInput,MouseButton,Window,Camera,GlobalTransform,Vec2, Result};
 use bevy::render::camera::ViewportConversionError;
-use bevy::render::mesh::MeshVertexBufferLayoutRef;
-use bevy::render::render_resource::{AsBindGroup, AsBindGroupError, BindGroupLayout, BindGroupLayoutEntry, CompareFunction, RenderPipelineDescriptor, ShaderRef, UnpreparedBindGroup};
-use bevy::render::renderer::RenderDevice;
-use bevy::ui::OverflowAxis::Visible;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::egui_wants_any_pointer_input;
 use transform_gizmo_bevy::GizmoCamera;
 
 fn handle_mouse_click_with_radius(
-    mark_resource: Res<MarkResource>,
+    mut commands:Commands,
     mut last_focus: Local<Option<Entity>>,
-    mut ev_motion: EventReader<CursorMoved>,
+    key: Res<ButtonInput<KeyCode>>,
     button: Res<ButtonInput<MouseButton>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform), With<GizmoCamera>>,
-    q_transforms: Query<(&MarkTextEntity, &GlobalTransform), With<Transform>>,
+    q_transforms: Query<(Entity, Option<&SelectedMark>, &MarkTextEntity, &GlobalTransform), With<Transform>>,
     mut billboard_text: Query<&mut Visibility, With<BillboardText>>,
 ) -> Result {
-    const MAX_CLICK_DISTANCE: f32 = 100.0; // 최대 클릭 거리
+    const MAX_CLICK_DISTANCE: f32 = 35.0; // 최대 클릭 거리
 
-    if button.just_pressed(MouseButton::Left) {
-        let window = q_windows.single()?;
+    if let Some(cursor_pos) = q_windows.single()?.cursor_position() {
 
-        if let Some(cursor_pos) = window.cursor_position() {
+        let (camera, camera_transform) = q_camera.single()?;
 
-            let (camera, camera_transform) = q_camera.single()?;
-
-            let closest = q_transforms
-                .iter()
-                .filter_map(|(entity, transform)| {
-                    // 3D -> 2D 투영
-                    camera.world_to_viewport(camera_transform, transform.translation())
-
-                        .and_then(|screen_pos| {
-                            let distance = cursor_pos.distance(screen_pos);
-                            if distance <= MAX_CLICK_DISTANCE {
-                                Ok((entity, distance))
-                            } else {
-                                Err(ViewportConversionError::PastFarPlane)
-                            }
-                        }).ok()
-                })
-                .min_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap());
-
-            let mut hide_text = None;
-            match closest {
-                Some((mark_entity, distance)) => {
-                    println!("근접 마커: {:?}, 거리: {:.2}", mark_entity.0, distance);
-                    if let Some(entity) = *last_focus {
-                        if entity == mark_entity.0 {
-                            return Ok(())
+        let closest = q_transforms
+            .iter()
+            .filter_map(|(entity,is_selected, mark_entity, transform)| {
+                // 3D -> 2D 투영
+                camera.world_to_viewport(camera_transform, transform.translation())
+                    .and_then(|screen_pos| {
+                        let distance = cursor_pos.distance(screen_pos);
+                        if distance <= MAX_CLICK_DISTANCE {
+                            Ok((entity, is_selected,mark_entity, distance))
+                        } else {
+                            Err(ViewportConversionError::PastFarPlane)
                         }
-                    }
-                    let mut visible = billboard_text.get_mut( mark_entity.0 )?;
-                    *visible = Visibility::Visible;
-                    hide_text = *last_focus;
-                    *last_focus = Some(mark_entity.0);
-                }
-                None => {
-                    println!("근접 마커 없음");
-                    hide_text = *last_focus;
-                    *last_focus = None;
-                }
-            }
+                    }).ok()
+            })
+            .min_by(|(_,_,_, a), (_,_,_, b)| a.partial_cmp(b).unwrap());
 
-            if let Some(bef_focus) = hide_text {
-                let mut visible = billboard_text.get_mut( bef_focus )?;
-                *visible = Visibility::Hidden;
+        let mut hide_text = None;
+        match closest {
+            Some((entity,is_selected, mark_entity, distance)) => {
+                // println!("근접 마커: {:?}, 거리: {:.2}", mark_entity.0, distance);
+
+                if button.just_pressed(MouseButton::Left) {
+                    if key.pressed(KeyCode::ShiftLeft) {
+                        if is_selected.is_some() {
+                            commands.entity(entity).remove::<SelectedMark>();
+                        } else {
+                            commands.entity(entity).insert(SelectedMark);
+                        }
+                    } else {
+                        for (next, _,_,_) in q_transforms.iter() {
+                            commands.entity(next).remove::<SelectedMark>();
+                        }
+                        commands.entity(entity).insert_if_new(SelectedMark);
+                    }
+                }
+
+                if let Some(entity) = *last_focus {
+                    if entity == mark_entity.0 {
+                        return Ok(())
+                    }
+                }
+                let mut visible = billboard_text.get_mut( mark_entity.0 )?;
+                *visible = Visibility::Visible;
+                hide_text = *last_focus;
+                *last_focus = Some(mark_entity.0);
             }
+            None => {
+                // println!("근접 마커 없음");
+                if button.just_pressed(MouseButton::Left) {
+                    for (next, next_selected,_,_) in q_transforms.iter() {
+                        commands.entity(next).remove::<SelectedMark>();
+                    }
+                }
+                hide_text = *last_focus;
+                *last_focus = None;
+            }
+        }
+
+        if let Some(bef_focus) = hide_text {
+            let mut visible = billboard_text.get_mut( bef_focus )?;
+            *visible = Visibility::Hidden;
         }
     }
     Ok(())
 }
+
+
+
+
+
+
+
+
+// Transform 제어 시스템
+pub fn transform_control_system(
+    mut commands: Commands,
+    mut control_status: ResMut<MarkControlStatus>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    mut selected_query: Query<&mut Transform, With<SelectedMark>>,
+) -> Result {
+    let window = windows.single()?;
+    let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO);
+
+    // 현재 선택된 오브젝트의 Transform 가져오기
+    let current_transform = selected_query.iter().next().copied();
+
+
+
+    match control_status.as_mut() {
+
+        MarkControlStatus::None => {
+            // G키로 Translation 모드 진입
+            if keyboard_input.just_pressed(KeyCode::KeyG) {
+                if let Some(transform) = current_transform {
+                    *control_status = MarkControlStatus::Translation {
+                        base: cursor_pos,
+                        origin: transform.translation,
+                        lock_mode: LockAxis::all(),
+                    };
+                }
+            }
+            // R키로 Rotation 모드 진입
+            else if keyboard_input.just_pressed(KeyCode::KeyR) {
+                if let Some(transform) = current_transform {
+                    *control_status = MarkControlStatus::Rotation {
+                        base: cursor_pos,
+                        origin: transform.rotation,
+                        lock_mode: LockAxis::all(),
+                        original_transform: transform,
+                        trackball_mode: false,
+                    };
+                }
+            }
+        },
+
+        MarkControlStatus::Translation { base, origin, lock_mode, original_transform } => {
+            // 축 잠금 처리
+            handle_axis_locking(&keyboard_input, lock_mode);
+
+            // Translation 적용
+            if let Ok(mut transform) = selected_query.get_single_mut() {
+                let mouse_delta = cursor_pos - *base;
+                let movement_factor = 0.01; // 이동 속도 조절
+
+                let mut movement = Vec3::ZERO;
+                if lock_mode.x { movement.x = mouse_delta.x * movement_factor; }
+                if lock_mode.y { movement.y = -mouse_delta.y * movement_factor; } // Y축 반전
+                if lock_mode.z { movement.z = mouse_delta.x * movement_factor; } // Z축은 X 마우스 움직임으로
+
+                transform.translation = *origin + movement;
+            }
+
+            // 취소 처리
+            if keyboard_input.just_pressed(KeyCode::Escape) ||
+                mouse_button_events.read().any(|event| event.button == MouseButton::Right && event.state.is_pressed()) {
+                // 원래 위치로 복원
+                if let Ok(mut transform) = selected_query.get_single_mut() {
+                    *transform = *original_transform;
+                }
+                *control_status = MarkControlStatus::Selected;
+            }
+            // 확정 처리 (마우스 왼쪽 클릭 또는 엔터)
+            else if mouse_input.just_pressed(MouseButton::Left) || keyboard_input.just_pressed(KeyCode::Enter) {
+                *control_status = MarkControlStatus::Selected;
+            }
+        },
+
+        MarkControlStatus::Rotation { base, origin, lock_mode, original_transform, trackball_mode } => {
+            // R키를 다시 누르면 트랙볼 모드 토글
+            if keyboard_input.just_pressed(KeyCode::KeyR) {
+                *trackball_mode = !*trackball_mode;
+            }
+
+            // 축 잠금 처리
+            handle_axis_locking(&keyboard_input, lock_mode);
+
+            // Rotation 적용
+            if let Ok(mut transform) = selected_query.get_single_mut() {
+                let mouse_delta = cursor_pos - *base;
+                let rotation_factor = 0.01; // 회전 속도 조절
+
+                if *trackball_mode {
+                    // 트랙볼 모드: 자유 회전
+                    let rotation_x = Quat::from_axis_angle(Vec3::X, -mouse_delta.y * rotation_factor);
+                    let rotation_y = Quat::from_axis_angle(Vec3::Y, -mouse_delta.x * rotation_factor);
+                    transform.rotation = *origin * rotation_y * rotation_x;
+                } else {
+                    // 축 제한 모드
+                    let mut rotation = Quat::IDENTITY;
+
+                    if lock_mode.x {
+                        rotation *= Quat::from_axis_angle(Vec3::X, -mouse_delta.y * rotation_factor);
+                    }
+                    if lock_mode.y {
+                        rotation *= Quat::from_axis_angle(Vec3::Y, -mouse_delta.x * rotation_factor);
+                    }
+                    if lock_mode.z {
+                        rotation *= Quat::from_axis_angle(Vec3::Z, mouse_delta.x * rotation_factor);
+                    }
+
+                    transform.rotation = *origin * rotation;
+                }
+            }
+
+            // 취소 처리
+            if keyboard_input.just_pressed(KeyCode::Escape) ||
+                mouse_button_events.read().any(|event| event.button == MouseButton::Right && event.state.is_pressed()) {
+                // 원래 상태로 복원
+                if let Ok(mut transform) = selected_query.get_single_mut() {
+                    *transform = *original_transform;
+                }
+                *control_status = MarkControlStatus::Selected;
+            }
+            // 확정 처리
+            else if mouse_input.just_pressed(MouseButton::Left) || keyboard_input.just_pressed(KeyCode::Enter) {
+                *control_status = MarkControlStatus::Selected;
+            }
+        },
+    }
+}
+//
+// fn handle_axis_locking(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &mut LockAxis) {
+//     let shift_pressed = keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight);
+//
+//     if keyboard_input.just_pressed(KeyCode::KeyX) {
+//         if shift_pressed {
+//             // Shift + X: X축 제외하고 잠금
+//             *lock_mode = LockAxis::except_x();
+//         } else {
+//             // X: X축만 잠금
+//             *lock_mode = LockAxis::only_x();
+//         }
+//     }
+//     else if keyboard_input.just_pressed(KeyCode::KeyY) {
+//         if shift_pressed {
+//             // Shift + Y: Y축 제외하고 잠금
+//             *lock_mode = LockAxis::except_y();
+//         } else {
+//             // Y: Y축만 잠금
+//             *lock_mode = LockAxis::only_y();
+//         }
+//     }
+//     else if keyboard_input.just_pressed(KeyCode::KeyZ) {
+//         if shift_pressed {
+//             // Shift + Z: Z축 제외하고 잠금
+//             *lock_mode = LockAxis::except_z();
+//         } else {
+//             // Z: Z축만 잠금
+//             *lock_mode = LockAxis::only_z();
+//         }
+//     }
+// }
