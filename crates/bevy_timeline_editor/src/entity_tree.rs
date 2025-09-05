@@ -70,7 +70,16 @@ pub enum MarkControlStatus {
     #[default]
     None,
     Translation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Vec3)> },
-    Rotation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Quat)> },
+    Rotation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Quat)>, trackball_mode:bool },
+}
+
+impl MarkControlStatus {
+    pub fn is_none(&self) -> bool {
+        match self {
+            Self::None => true,
+            _ => false
+        }
+    }
 }
 
 pub struct TreeNode {
@@ -109,11 +118,13 @@ impl Plugin for TimelineTargetListPlugin {
     fn build(&self, app: &mut App) {
         let target_refresh = app.world_mut().register_system( make_treenode );
         app.insert_resource( TargetRefreshFn(target_refresh) );
+        app.insert_resource( MarkControlStatus::None );
         app.add_plugins(MaterialPlugin::<
             ExtendedMaterial<StandardMaterial, AlwaysOnTopExt>,
         >::default());
         app.add_systems( Startup, setup);
         app.add_systems( Update, billboard_fit_scale );
+        app.add_systems( Update, transform_control_system );
         app.add_systems( Update, handle_mouse_click_with_radius.run_if(not(egui_wants_any_pointer_input)) );
         app.insert_resource( TargetList { transform:Vec::new(), point_light:Vec::new() , spot_light : Vec::new() } );
 
@@ -338,6 +349,7 @@ use transform_gizmo_bevy::GizmoCamera;
 fn handle_mouse_click_with_radius(
     mut commands:Commands,
     mut last_focus: Local<Option<Entity>>,
+    control_status: Res<MarkControlStatus>,
     key: Res<ButtonInput<KeyCode>>,
     button: Res<ButtonInput<MouseButton>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
@@ -348,9 +360,7 @@ fn handle_mouse_click_with_radius(
     const MAX_CLICK_DISTANCE: f32 = 35.0; // 최대 클릭 거리
 
     if let Some(cursor_pos) = q_windows.single()?.cursor_position() {
-
         let (camera, camera_transform) = q_camera.single()?;
-
         let closest = q_transforms
             .iter()
             .filter_map(|(entity,is_selected, mark_entity, transform)| {
@@ -371,8 +381,7 @@ fn handle_mouse_click_with_radius(
         match closest {
             Some((entity,is_selected, mark_entity, distance)) => {
                 // println!("근접 마커: {:?}, 거리: {:.2}", mark_entity.0, distance);
-
-                if button.just_pressed(MouseButton::Left) {
+                if button.just_pressed(MouseButton::Left) && control_status.is_none() {
                     if key.pressed(KeyCode::ShiftLeft) {
                         if is_selected.is_some() {
                             commands.entity(entity).remove::<SelectedMark>();
@@ -426,81 +435,88 @@ fn handle_mouse_click_with_radius(
 
 // Transform 제어 시스템
 pub fn transform_control_system(
+    mut last_cursor_pos: Local<Vec2>,
     mut commands: Commands,
     mut control_status: ResMut<MarkControlStatus>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut selected_query: Query<&mut Transform, With<SelectedMark>>,
+    mut query: Query<(Entity, &mut Transform)>,
+    mut selected_query: Query<&ChildOf, With<SelectedMark>>,
 ) -> Result {
     let window = windows.single()?;
     let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO);
-
-    // 현재 선택된 오브젝트의 Transform 가져오기
-    let current_transform = selected_query.iter().next().copied();
-
-
+    let is_cursor_moved = (cursor_pos - *last_cursor_pos) == Vec2::ZERO;
+    *last_cursor_pos = cursor_pos;
 
     match control_status.as_mut() {
 
         MarkControlStatus::None => {
             // G키로 Translation 모드 진입
             if keyboard_input.just_pressed(KeyCode::KeyG) {
-                if let Some(transform) = current_transform {
+                let origin:Vec<_> = selected_query.iter().map( |parent| {
+                    let (parent_entity, transform) = query.get( parent.0 ).unwrap();
+                    (parent_entity, transform.translation)
+                }).collect();
+                let len = origin.len();
+                if len > 0 {
                     *control_status = MarkControlStatus::Translation {
                         base: cursor_pos,
-                        origin: transform.translation,
                         lock_mode: LockAxis::all(),
+                        origin,
                     };
                 }
             }
             // R키로 Rotation 모드 진입
             else if keyboard_input.just_pressed(KeyCode::KeyR) {
-                if let Some(transform) = current_transform {
+                let origin:Vec<_> = selected_query.iter().map( |parent| {
+                    let (parent_entity, transform) = query.get( parent.0 ).unwrap();
+                    (parent_entity, transform.rotation.clone())
+                }).collect();
+                let len = origin.len();
+                if len > 0 {
                     *control_status = MarkControlStatus::Rotation {
                         base: cursor_pos,
-                        origin: transform.rotation,
+                        origin,
                         lock_mode: LockAxis::all(),
-                        original_transform: transform,
                         trackball_mode: false,
                     };
                 }
             }
         },
 
-        MarkControlStatus::Translation { base, origin, lock_mode, original_transform } => {
+        MarkControlStatus::Translation { base, origin, lock_mode } => {
             // 축 잠금 처리
             handle_axis_locking(&keyboard_input, lock_mode);
 
+            let diff = cursor_pos - *base;
+
             // Translation 적용
-            if let Ok(mut transform) = selected_query.get_single_mut() {
-                let mouse_delta = cursor_pos - *base;
-                let movement_factor = 0.01; // 이동 속도 조절
-
-                let mut movement = Vec3::ZERO;
-                if lock_mode.x { movement.x = mouse_delta.x * movement_factor; }
-                if lock_mode.y { movement.y = -mouse_delta.y * movement_factor; } // Y축 반전
-                if lock_mode.z { movement.z = mouse_delta.x * movement_factor; } // Z축은 X 마우스 움직임으로
-
-                transform.translation = *origin + movement;
+            if is_cursor_moved {
+                const movement_factor:f32 = 0.01; // 이동 속도 조절
+                for (parent, base) in origin.iter() {
+                    let (_, mut target_transform) = query.get_mut(*parent)?;
+                    if lock_mode.x { target_transform.translation.x = base.x + diff.x * movement_factor; }
+                    if lock_mode.y { target_transform.translation.y = base.y + diff.y * movement_factor; } // Y축 반전
+                    if lock_mode.z { target_transform.translation.z = base.z + diff.x * movement_factor; } // Z축은 X 마우스 움직임으로
+                }
             }
 
             // 취소 처리
-            if keyboard_input.just_pressed(KeyCode::Escape) ||
-                mouse_button_events.read().any(|event| event.button == MouseButton::Right && event.state.is_pressed()) {
-                // 원래 위치로 복원
-                if let Ok(mut transform) = selected_query.get_single_mut() {
-                    *transform = *original_transform;
+            if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
+                for (parent, origin) in origin.iter_mut() {
+                    let (_parent, mut transform) = query.get_mut(*parent)?;
+                    transform.translation = *origin;
                 }
-                *control_status = MarkControlStatus::Selected;
+                *control_status = MarkControlStatus::None;
             }
             // 확정 처리 (마우스 왼쪽 클릭 또는 엔터)
             else if mouse_input.just_pressed(MouseButton::Left) || keyboard_input.just_pressed(KeyCode::Enter) {
-                *control_status = MarkControlStatus::Selected;
+                *control_status = MarkControlStatus::None;
             }
         },
 
-        MarkControlStatus::Rotation { base, origin, lock_mode, original_transform, trackball_mode } => {
+        MarkControlStatus::Rotation { base, origin, lock_mode, trackball_mode } => {
             // R키를 다시 누르면 트랙볼 모드 토글
             if keyboard_input.just_pressed(KeyCode::KeyR) {
                 *trackball_mode = !*trackball_mode;
@@ -509,79 +525,85 @@ pub fn transform_control_system(
             // 축 잠금 처리
             handle_axis_locking(&keyboard_input, lock_mode);
 
+            let diff = cursor_pos - *base;
+
             // Rotation 적용
-            if let Ok(mut transform) = selected_query.get_single_mut() {
-                let mouse_delta = cursor_pos - *base;
-                let rotation_factor = 0.01; // 회전 속도 조절
+            if is_cursor_moved {
+                const rotation_factor:f32 = 0.01; // 이동 속도 조절
+                for (parent, base) in origin.iter() {
+                    let (_, mut target_transform) = query.get_mut(*parent)?;
 
-                if *trackball_mode {
-                    // 트랙볼 모드: 자유 회전
-                    let rotation_x = Quat::from_axis_angle(Vec3::X, -mouse_delta.y * rotation_factor);
-                    let rotation_y = Quat::from_axis_angle(Vec3::Y, -mouse_delta.x * rotation_factor);
-                    transform.rotation = *origin * rotation_y * rotation_x;
-                } else {
-                    // 축 제한 모드
-                    let mut rotation = Quat::IDENTITY;
+                    if *trackball_mode {
+                        // 트랙볼 모드: 자유 회전
+                        let rotation_x = Quat::from_axis_angle(Vec3::X, -diff.y * rotation_factor);
+                        let rotation_y = Quat::from_axis_angle(Vec3::Y, -diff.x * rotation_factor);
+                        target_transform.rotation = *base * rotation_y * rotation_x;
+                    } else {
+                        // 축 제한 모드
+                        let mut rotation = Quat::IDENTITY;
 
-                    if lock_mode.x {
-                        rotation *= Quat::from_axis_angle(Vec3::X, -mouse_delta.y * rotation_factor);
-                    }
-                    if lock_mode.y {
-                        rotation *= Quat::from_axis_angle(Vec3::Y, -mouse_delta.x * rotation_factor);
-                    }
-                    if lock_mode.z {
-                        rotation *= Quat::from_axis_angle(Vec3::Z, mouse_delta.x * rotation_factor);
-                    }
+                        if lock_mode.x {
+                            rotation *= Quat::from_axis_angle(Vec3::X, -diff.y * rotation_factor);
+                        }
+                        if lock_mode.y {
+                            rotation *= Quat::from_axis_angle(Vec3::Y, -diff.x * rotation_factor);
+                        }
+                        if lock_mode.z {
+                            rotation *= Quat::from_axis_angle(Vec3::Z, diff.x * rotation_factor);
+                        }
 
-                    transform.rotation = *origin * rotation;
+                        target_transform.rotation = *base * rotation;
+                    }
                 }
             }
 
             // 취소 처리
-            if keyboard_input.just_pressed(KeyCode::Escape) ||
-                mouse_button_events.read().any(|event| event.button == MouseButton::Right && event.state.is_pressed()) {
+            if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
                 // 원래 상태로 복원
-                if let Ok(mut transform) = selected_query.get_single_mut() {
-                    *transform = *original_transform;
+                for (parent, origin) in origin.iter() {
+                    let (_parent, mut transform) = query.get_mut(*parent)?;
+                    transform.rotation = *origin;
                 }
-                *control_status = MarkControlStatus::Selected;
+                *control_status = MarkControlStatus::None;
             }
             // 확정 처리
             else if mouse_input.just_pressed(MouseButton::Left) || keyboard_input.just_pressed(KeyCode::Enter) {
-                *control_status = MarkControlStatus::Selected;
+                *control_status = MarkControlStatus::None;
             }
         },
     }
+
+    Ok(())
 }
-//
-// fn handle_axis_locking(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &mut LockAxis) {
-//     let shift_pressed = keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight);
-//
-//     if keyboard_input.just_pressed(KeyCode::KeyX) {
-//         if shift_pressed {
-//             // Shift + X: X축 제외하고 잠금
-//             *lock_mode = LockAxis::except_x();
-//         } else {
-//             // X: X축만 잠금
-//             *lock_mode = LockAxis::only_x();
-//         }
-//     }
-//     else if keyboard_input.just_pressed(KeyCode::KeyY) {
-//         if shift_pressed {
-//             // Shift + Y: Y축 제외하고 잠금
-//             *lock_mode = LockAxis::except_y();
-//         } else {
-//             // Y: Y축만 잠금
-//             *lock_mode = LockAxis::only_y();
-//         }
-//     }
-//     else if keyboard_input.just_pressed(KeyCode::KeyZ) {
-//         if shift_pressed {
-//             // Shift + Z: Z축 제외하고 잠금
-//             *lock_mode = LockAxis::except_z();
-//         } else {
-//             // Z: Z축만 잠금
-//             *lock_mode = LockAxis::only_z();
-//         }
-//     }
-// }
+
+fn handle_axis_locking(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &mut LockAxis) {
+    let shift_pressed = keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight);
+
+    if keyboard_input.just_pressed(KeyCode::KeyX) {
+        if shift_pressed {
+            // Shift + X: X축 제외하고 잠금
+            *lock_mode = LockAxis::except_x();
+        } else {
+            // X: X축만 잠금
+            *lock_mode = LockAxis::only_x();
+        }
+    }
+    else if keyboard_input.just_pressed(KeyCode::KeyY) {
+        if shift_pressed {
+            // Shift + Y: Y축 제외하고 잠금
+            *lock_mode = LockAxis::except_y();
+        } else {
+            // Y: Y축만 잠금
+            *lock_mode = LockAxis::only_y();
+        }
+    }
+    else if keyboard_input.just_pressed(KeyCode::KeyZ) {
+        if shift_pressed {
+            // Shift + Z: Z축 제외하고 잠금
+            *lock_mode = LockAxis::except_z();
+        } else {
+            // Z: Z축만 잠금
+            *lock_mode = LockAxis::only_z();
+        }
+    }
+}
