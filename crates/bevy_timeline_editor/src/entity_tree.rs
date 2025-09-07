@@ -65,12 +65,29 @@ impl LockAxis {
     }
 }
 
+#[derive(Clone)]
+pub enum RotationMode {
+    World,
+    Local,
+    LockWorld,
+    LockLocal,
+}
+
+#[derive(Clone,Default)]
+pub enum RotationAxis {
+    #[default]
+    None,
+    X(RotationMode),
+    Y(RotationMode),
+    Z(RotationMode),
+}
+
 #[derive(Resource, Default)]
 pub enum MarkControlStatus {
     #[default]
     None,
     Translation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Vec3)> },
-    Rotation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Quat)>, trackball_mode:bool },
+    Rotation { base:Vec2, axis_mode:RotationAxis, origin:Vec<(Entity,Quat,Vec3)>, trackball_mode:bool },
 }
 
 impl MarkControlStatus {
@@ -124,7 +141,7 @@ impl Plugin for TimelineTargetListPlugin {
         >::default());
         app.add_systems( Startup, setup);
         app.add_systems( Update, billboard_fit_scale );
-        app.add_systems( Update, transform_control_system );
+        app.add_systems( Update, transform_control_system.after(handle_mouse_click_with_radius) );
         app.add_systems( Update, handle_mouse_click_with_radius.run_if(not(egui_wants_any_pointer_input)) );
         app.insert_resource( TargetList { transform:Vec::new(), point_light:Vec::new() , spot_light : Vec::new() } );
 
@@ -430,23 +447,39 @@ fn handle_mouse_click_with_radius(
 
 
 
-
-
+/// 화면 좌표를 가상의 구면(Arcball)에 투영
+fn project_to_sphere(p: Vec2, size: Vec2) -> Vec3 {
+    let mut v = Vec3::new(
+        (2.0 * p.x - size.x) / size.x,
+        (size.y - 2.0 * p.y) / size.y,
+        0.0,
+    );
+    let d = v.x * v.x + v.y * v.y;
+    if d <= 1.0 {
+        v.z = (1.0 - d).sqrt();
+    } else {
+        v = v.normalize();
+    }
+    v
+}
 
 // Transform 제어 시스템
 pub fn transform_control_system(
+    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
     mut last_cursor_pos: Local<Vec2>,
     mut commands: Commands,
     mut control_status: ResMut<MarkControlStatus>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
+    mut global_query: Query<&mut GlobalTransform, Without<Camera3d>>,
     mut query: Query<(Entity, &mut Transform)>,
     mut selected_query: Query<&ChildOf, With<SelectedMark>>,
 ) -> Result {
+    let (camera, cam_transform) = cameras.single()?; // 주 카메라
     let window = windows.single()?;
     let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO);
-    let is_cursor_moved = (cursor_pos - *last_cursor_pos) == Vec2::ZERO;
+    let is_cursor_moved = (cursor_pos - *last_cursor_pos) != Vec2::ZERO;
     *last_cursor_pos = cursor_pos;
 
     match control_status.as_mut() {
@@ -471,14 +504,14 @@ pub fn transform_control_system(
             else if keyboard_input.just_pressed(KeyCode::KeyR) {
                 let origin:Vec<_> = selected_query.iter().map( |parent| {
                     let (parent_entity, transform) = query.get( parent.0 ).unwrap();
-                    (parent_entity, transform.rotation.clone())
+                    (parent_entity, transform.rotation.clone(), transform.translation)
                 }).collect();
                 let len = origin.len();
                 if len > 0 {
                     *control_status = MarkControlStatus::Rotation {
                         base: cursor_pos,
                         origin,
-                        lock_mode: LockAxis::all(),
+                        axis_mode: RotationAxis::None,
                         trackball_mode: false,
                     };
                 }
@@ -493,12 +526,34 @@ pub fn transform_control_system(
 
             // Translation 적용
             if is_cursor_moved {
-                const movement_factor:f32 = 0.01; // 이동 속도 조절
-                for (parent, base) in origin.iter() {
-                    let (_, mut target_transform) = query.get_mut(*parent)?;
-                    if lock_mode.x { target_transform.translation.x = base.x + diff.x * movement_factor; }
-                    if lock_mode.y { target_transform.translation.y = base.y + diff.y * movement_factor; } // Y축 반전
-                    if lock_mode.z { target_transform.translation.z = base.z + diff.x * movement_factor; } // Z축은 X 마우스 움직임으로
+                let ray_from = camera.viewport_to_world(cam_transform, *base).unwrap();
+                let ray_to = camera.viewport_to_world(cam_transform, cursor_pos).unwrap();
+
+                // 평면: 카메라 뷰 평면 (camera forward와 수직)
+                let plane_normal = cam_transform.forward();
+                let plane_origin = origin[0].1; // 기준점 하나 선택 (첫 번째 선택된 엔티티 위치)
+
+                // 두 점을 평면과 교차시켜 "월드 좌표" 얻기
+                let start_hit = ray_from.intersect_plane(plane_origin, InfinitePlane3d { normal: plane_normal })
+                    .map(|d| ray_from.origin + ray_from.direction * d);
+                let now_hit = ray_to.intersect_plane(plane_origin, InfinitePlane3d { normal: plane_normal })
+                    .map(|d| ray_to.origin + ray_to.direction * d);
+
+                if let (Some(start), Some(now)) = (start_hit, now_hit) {
+                    let delta = now - start;
+
+                    for (entity, base_translation) in origin.iter() {
+                        if let Ok( (e,mut tr) ) = query.get_mut(*entity) {
+                            let mut t = *base_translation + delta;
+
+                            // 축 잠금
+                            if !lock_mode.x { t.x = base_translation.x; }
+                            if !lock_mode.y { t.y = base_translation.y; }
+                            if !lock_mode.z { t.z = base_translation.z; }
+
+                            tr.translation = t;
+                        }
+                    }
                 }
             }
 
@@ -516,53 +571,131 @@ pub fn transform_control_system(
             }
         },
 
-        MarkControlStatus::Rotation { base, origin, lock_mode, trackball_mode } => {
+        MarkControlStatus::Rotation { base, origin, axis_mode, trackball_mode } => {
             // R키를 다시 누르면 트랙볼 모드 토글
             if keyboard_input.just_pressed(KeyCode::KeyR) {
                 *trackball_mode = !*trackball_mode;
             }
 
             // 축 잠금 처리
-            handle_axis_locking(&keyboard_input, lock_mode);
+            handle_rotation_axis(&keyboard_input, axis_mode);
 
             let diff = cursor_pos - *base;
 
             // Rotation 적용
             if is_cursor_moved {
                 const rotation_factor:f32 = 0.01; // 이동 속도 조절
-                for (parent, base) in origin.iter() {
-                    let (_, mut target_transform) = query.get_mut(*parent)?;
 
-                    if *trackball_mode {
-                        // 트랙볼 모드: 자유 회전
-                        let rotation_x = Quat::from_axis_angle(Vec3::X, -diff.y * rotation_factor);
-                        let rotation_y = Quat::from_axis_angle(Vec3::Y, -diff.x * rotation_factor);
-                        target_transform.rotation = *base * rotation_y * rotation_x;
-                    } else {
-                        // 축 제한 모드
-                        let mut rotation = Quat::IDENTITY;
+                if *trackball_mode {
+                    // 트랙볼 모드: 자유 회전
+                    // let rotation_x = Quat::from_axis_angle(Vec3::X, -diff.y * rotation_factor);
+                    // let rotation_y = Quat::from_axis_angle(Vec3::Y, -diff.x * rotation_factor);
+                    // target_transform.rotation = *base * rotation_y * rotation_x;
 
-                        if lock_mode.x {
-                            rotation *= Quat::from_axis_angle(Vec3::X, -diff.y * rotation_factor);
-                        }
-                        if lock_mode.y {
-                            rotation *= Quat::from_axis_angle(Vec3::Y, -diff.x * rotation_factor);
-                        }
-                        if lock_mode.z {
-                            rotation *= Quat::from_axis_angle(Vec3::Z, diff.x * rotation_factor);
-                        }
+                    // Arcball 회전
+                    let v0 = project_to_sphere(*base, window.size());
+                    let v1 = project_to_sphere(cursor_pos, window.size());
+                    let axis = v0.cross(v1).normalize_or_zero();
+                    if axis.length_squared() > 0.0 {
+                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos();
+                        let q = Quat::from_axis_angle(axis, angle);
 
-                        target_transform.rotation = *base * rotation;
+                        for (parent, base_rot, base_translation) in origin.iter() {
+                            let (_, mut transform) = query.get_mut(*parent)?;
+                            transform.rotation = *base_rot * q;
+                        }
                     }
+                } else {
+                    // 축 제한 모드
+                    // 1. Pivot (선택된 객체들의 월드 중심 → 2D 투영)
+                    let mut world_center = Vec3::ZERO;
+                    let mut count = 0;
+                    //GlobalTransform 은 PostUpdate 에서 계산되므로 요구 이후에만 제대로 나옴
+                    //때문에 아래의 world_to_viewport 는 Err 이 나올것
+                    for (entity, _,_) in origin.iter() {
+                        if let Ok(transform) = global_query.get(*entity) {
+                            world_center += transform.translation();
+                        }
+                    }
+                    world_center /= count as f32;
+
+                    let origin: Vec<_> = selected_query.iter().filter_map(|child_of| {
+                        let ent = child_of.0;
+                        // global transform 가져오기 (월드 좌표)
+                        if let Ok(g) = global_query.get(ent) {
+                            // g.translation() / g.rotation() 메서드 이름은 bevy 버전에 따라 다를 수 있음.
+                            let base_pos = g.translation();
+                            let base_rot = g.rotation();
+                            Some((child_of.0, base_rot, base_pos))
+                        } else {
+                            None
+                        }
+                    }).collect();
+
+                    // 2D 투영 (Pivot 스크린 좌표)
+                    // let Ok(pivot_2d) = camera.world_to_viewport(cam_transform, world_center) else { return Ok(()) };
+
+                    // 2) 화면상 pivot 좌표 얻기 (카메라 API)
+                    if let Ok(pivot_2d) = camera.world_to_viewport(cam_transform, world_center) {
+                        let v1 = *base - pivot_2d;
+                        let v2 = cursor_pos - pivot_2d;
+                        if v1.length_squared() > 0.0 && v2.length_squared() > 0.0 {
+                            // 안정적 부호 각도: atan2(cross, dot)
+                            let cross = v1.x * v2.y - v1.y * v2.x;
+                            let dot = v1.dot(v2);
+                            let signed_angle = cross.atan2(dot);
+
+                            // 회전축: 카메라 앞방향 (부호가 뒤집히면 axis에 -를 붙이세요)
+                            let axis = -cam_transform.forward().normalize();
+                            let rot = Quat::from_axis_angle(axis, signed_angle);
+
+                            // 3) 각 엔티티에 대해: 월드 기준 새 pos/rot 계산 후 로컬로 변환해서 저장
+                            for (entity, base_rot, base_pos) in origin.iter() {
+                                // 월드에서의 새 회전/위치
+                                let new_global_rot = *base_rot * rot;
+                                let new_global_pos = world_center + rot * (*base_pos - world_center);
+
+                                // 부모가 있는 경우: 부모의 GlobalTransform을 얻어 역변환 적용하여 로컬 변환 계산
+                                if let Some(parent_ent) = parent_opt {
+                                    if let Ok(parent_gt) = global_query.get(*parent_ent) {
+                                        // parent_gt 의 월드 행렬 구해서 역행렬로 로컬 매트릭스 계산
+                                        let parent_mat = parent_gt.compute_matrix();
+                                        let inv = parent_mat.inverse();
+
+                                        let new_global_mat =
+                                            Mat4::from_scale_rotation_translation(Vec3::ONE, new_global_rot, new_global_pos);
+                                        let new_local_mat = inv * new_global_mat;
+
+                                        // Transform::from_matrix 가 없으면 직접 분해해서 translation/rotation/scale 할 것
+                                        let new_local = Transform::from_matrix(new_local_mat);
+
+                                        if let Ok((_, mut tr)) = query.get_mut(*entity) {
+                                            *tr = new_local;
+                                        }
+                                    }
+                                } else {
+                                    // 부모가 없으면 로컬 == 월드 이므로 바로 설정
+                                    if let Ok((_, mut tr)) = query.get_mut(*entity) {
+                                        tr.translation = new_global_pos;
+                                        tr.rotation = new_global_rot;
+                                    }
+                                }
+                            } // for origin
+                        } // if vectors ok
+                    } // if pivot_2
+
+
+
                 }
             }
 
             // 취소 처리
             if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
                 // 원래 상태로 복원
-                for (parent, origin) in origin.iter() {
+                for (parent, origin, translation) in origin.iter() {
                     let (_parent, mut transform) = query.get_mut(*parent)?;
                     transform.rotation = *origin;
+                    transform.translation = *translation;
                 }
                 *control_status = MarkControlStatus::None;
             }
@@ -606,4 +739,26 @@ fn handle_axis_locking(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &m
             *lock_mode = LockAxis::only_z();
         }
     }
+}
+
+fn handle_rotation_axis(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &mut RotationAxis) {
+    let shift_pressed = keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight);
+
+    if keyboard_input.just_pressed(KeyCode::KeyX) {
+        match lock_mode {
+            RotationAxis::X(rmode) => match rmode {
+                RotationMode::World if !shift_pressed => *lock_mode = RotationAxis::X(RotationMode::Local),
+                RotationMode::LockWorld if shift_pressed => *lock_mode = RotationAxis::Y(RotationMode::LockLocal),
+                _ => *lock_mode = RotationAxis::None
+            }
+            _ => {
+                if !shift_pressed {
+                    *lock_mode = RotationAxis::X(RotationMode::World)
+                } else {
+                    *lock_mode = RotationAxis::X(RotationMode::LockWorld)
+                }
+            },
+        }
+    }
+
 }
