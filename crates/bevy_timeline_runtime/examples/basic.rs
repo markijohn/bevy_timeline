@@ -1,3 +1,5 @@
+use std::ops::DerefMut;
+use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use serde_json::Value;
 use bevy_timeline_runtime::prelude::*;
@@ -9,6 +11,7 @@ fn main() {
             DefaultTransformSet,
         )>::new())
         .add_systems(Startup, setup)
+        .add_systems(PostUpdate, check)
         .run();
 }
 
@@ -53,4 +56,23 @@ fn setup(
         Camera3d::default(),
         Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+}
+
+fn check(
+    mut commands: Commands,
+    keycode: Res<ButtonInput<KeyCode>>,
+    motion : Res<AccumulatedMouseMotion>,
+    mut query: Single<(&Name, &Transform, &mut GlobalTransform)>,
+) {
+    if keycode.pressed(KeyCode::ArrowLeft) {
+
+        let (name,tr, gtr) = query.deref_mut();
+        println!("{tr:?} , {gtr:?}");
+        // 현재 월드 위치에서 x를 1.5만큼 이동
+        let mut affine = gtr.affine();
+        affine.translation.x += 0.2;
+
+        // GlobalTransform을 새로운 위치로 설정
+        **gtr = GlobalTransform::from(affine);
+    }
 }
