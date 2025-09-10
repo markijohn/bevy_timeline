@@ -87,7 +87,7 @@ pub enum MarkControlStatus {
     #[default]
     None,
     Translation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Vec3)> },
-    Rotation { base:Vec2, axis_mode:RotationAxis, origin:Vec<(Entity,Quat,Vec3)>, trackball_mode:bool },
+    Rotation { base:Vec2, axis_mode:RotationAxis, origin:Vec<(Entity,Quat,Vec3,Option<Entity>)>, trackball_mode:bool },
 }
 
 impl MarkControlStatus {
@@ -472,7 +472,7 @@ pub fn transform_control_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut global_query: Query<&mut GlobalTransform, Without<Camera3d>>,
+    mut global_query: Query<(Option<&ChildOf>,&mut GlobalTransform), Without<Camera3d>>,
     mut query: Query<(Entity, &mut Transform)>,
     mut selected_query: Query<&ChildOf, With<SelectedMark>>,
 ) -> Result {
@@ -502,10 +502,15 @@ pub fn transform_control_system(
             }
             // R키로 Rotation 모드 진입
             else if keyboard_input.just_pressed(KeyCode::KeyR) {
-                let origin:Vec<_> = selected_query.iter().map( |parent| {
+                let mut origin = vec![];
+                for parent in selected_query {
                     let (parent_entity, transform) = query.get( parent.0 ).unwrap();
-                    (parent_entity, transform.rotation.clone(), transform.translation)
-                }).collect();
+                    let Ok( (parent_parent,gtr) ) = global_query.get(parent_entity) else { return Ok(()) };
+                    let parent_parent = parent_parent.map( |parent| parent.0.clone() );
+                    origin.push(
+                    (parent_entity, gtr.rotation(), gtr.translation(), parent_parent )
+                    );
+                }
                 let len = origin.len();
                 if len > 0 {
                     *control_status = MarkControlStatus::Rotation {
@@ -514,6 +519,7 @@ pub fn transform_control_system(
                         axis_mode: RotationAxis::None,
                         trackball_mode: false,
                     };
+                    println!("Change mode");
                 }
             }
         },
@@ -584,14 +590,7 @@ pub fn transform_control_system(
 
             // Rotation 적용
             if is_cursor_moved {
-                const rotation_factor:f32 = 0.01; // 이동 속도 조절
-
                 if *trackball_mode {
-                    // 트랙볼 모드: 자유 회전
-                    // let rotation_x = Quat::from_axis_angle(Vec3::X, -diff.y * rotation_factor);
-                    // let rotation_y = Quat::from_axis_angle(Vec3::Y, -diff.x * rotation_factor);
-                    // target_transform.rotation = *base * rotation_y * rotation_x;
-
                     // Arcball 회전
                     let v0 = project_to_sphere(*base, window.size());
                     let v1 = project_to_sphere(cursor_pos, window.size());
@@ -600,8 +599,8 @@ pub fn transform_control_system(
                         let angle = v0.dot(v1).clamp(-1.0, 1.0).acos();
                         let q = Quat::from_axis_angle(axis, angle);
 
-                        for (parent, base_rot, base_translation) in origin.iter() {
-                            let (_, mut transform) = query.get_mut(*parent)?;
+                        for (entity, base_rot, base_translation, parent) in origin.iter() {
+                            let (_, mut transform) = query.get_mut(*entity)?;
                             transform.rotation = *base_rot * q;
                         }
                     }
@@ -610,30 +609,13 @@ pub fn transform_control_system(
                     // 1. Pivot (선택된 객체들의 월드 중심 → 2D 투영)
                     let mut world_center = Vec3::ZERO;
                     let mut count = 0;
-                    //GlobalTransform 은 PostUpdate 에서 계산되므로 요구 이후에만 제대로 나옴
+                    //GlobalTransform 은 PostUpdate 에서 계산되므로 요구 이후에만 제대로 나옴 (즉 프레임 하나를 건너띈 후에야)
                     //때문에 아래의 world_to_viewport 는 Err 이 나올것
-                    for (entity, _,_) in origin.iter() {
-                        if let Ok(transform) = global_query.get(*entity) {
-                            world_center += transform.translation();
-                        }
+                    for (entity, _gquat, g_trans,_) in origin.iter() {
+                        world_center += g_trans;
+                        count += 1;
                     }
                     world_center /= count as f32;
-
-                    let origin: Vec<_> = selected_query.iter().filter_map(|child_of| {
-                        let ent = child_of.0;
-                        // global transform 가져오기 (월드 좌표)
-                        if let Ok(g) = global_query.get(ent) {
-                            // g.translation() / g.rotation() 메서드 이름은 bevy 버전에 따라 다를 수 있음.
-                            let base_pos = g.translation();
-                            let base_rot = g.rotation();
-                            Some((child_of.0, base_rot, base_pos))
-                        } else {
-                            None
-                        }
-                    }).collect();
-
-                    // 2D 투영 (Pivot 스크린 좌표)
-                    // let Ok(pivot_2d) = camera.world_to_viewport(cam_transform, world_center) else { return Ok(()) };
 
                     // 2) 화면상 pivot 좌표 얻기 (카메라 API)
                     if let Ok(pivot_2d) = camera.world_to_viewport(cam_transform, world_center) {
@@ -646,18 +628,18 @@ pub fn transform_control_system(
                             let signed_angle = cross.atan2(dot);
 
                             // 회전축: 카메라 앞방향 (부호가 뒤집히면 axis에 -를 붙이세요)
-                            let axis = -cam_transform.forward().normalize();
+                            let axis = cam_transform.forward().normalize();
                             let rot = Quat::from_axis_angle(axis, signed_angle);
 
                             // 3) 각 엔티티에 대해: 월드 기준 새 pos/rot 계산 후 로컬로 변환해서 저장
-                            for (entity, base_rot, base_pos) in origin.iter() {
+                            for (entity, base_rot, base_pos, parent_opt) in origin.iter() {
                                 // 월드에서의 새 회전/위치
                                 let new_global_rot = *base_rot * rot;
                                 let new_global_pos = world_center + rot * (*base_pos - world_center);
 
                                 // 부모가 있는 경우: 부모의 GlobalTransform을 얻어 역변환 적용하여 로컬 변환 계산
                                 if let Some(parent_ent) = parent_opt {
-                                    if let Ok(parent_gt) = global_query.get(*parent_ent) {
+                                    if let Ok( (_,parent_gt) ) = global_query.get(*parent_ent) {
                                         // parent_gt 의 월드 행렬 구해서 역행렬로 로컬 매트릭스 계산
                                         let parent_mat = parent_gt.compute_matrix();
                                         let inv = parent_mat.inverse();
@@ -671,18 +653,27 @@ pub fn transform_control_system(
 
                                         if let Ok((_, mut tr)) = query.get_mut(*entity) {
                                             *tr = new_local;
+                                            println!("Done");
                                         }
+                                    } else {
+                                        println!("?");
                                     }
                                 } else {
                                     // 부모가 없으면 로컬 == 월드 이므로 바로 설정
                                     if let Ok((_, mut tr)) = query.get_mut(*entity) {
                                         tr.translation = new_global_pos;
                                         tr.rotation = new_global_rot;
+                                        println!("Set root");
+                                    } else {
+                                        println!("???");
                                     }
                                 }
                             } // for origin
                         } // if vectors ok
                     } // if pivot_2
+                    else {
+                        println!("?????????");
+                    }
 
 
 
@@ -692,7 +683,7 @@ pub fn transform_control_system(
             // 취소 처리
             if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
                 // 원래 상태로 복원
-                for (parent, origin, translation) in origin.iter() {
+                for (parent, origin, translation,_) in origin.iter() {
                     let (_parent, mut transform) = query.get_mut(*parent)?;
                     transform.rotation = *origin;
                     transform.translation = *translation;
