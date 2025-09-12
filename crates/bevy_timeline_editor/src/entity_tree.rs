@@ -16,6 +16,7 @@ use crate::shader::top::*;
 
 #[derive(Clone, Copy)]
 pub struct LockAxis {
+    pub local: bool,
     pub x: bool,
     pub y: bool,
     pub z: bool,
@@ -24,6 +25,7 @@ pub struct LockAxis {
 impl Default for LockAxis {
     fn default() -> Self {
         Self {
+            local: false,
             x: false,
             y: false,
             z: false,
@@ -33,35 +35,35 @@ impl Default for LockAxis {
 
 impl LockAxis {
     pub fn all() -> Self {
-        Self { x: true, y: true, z: true }
+        Self { local:true, x: true, y: true, z: true }
     }
 
-    pub fn none() -> Self {
-        Self { x: false, y: false, z: false }
+    pub fn none(self) -> Self {
+        Self { local:self.local, x: false, y: false, z: false }
     }
 
-    pub fn only_x() -> Self {
-        Self { x: true, y: false, z: false }
+    pub fn only_x(self) -> Self {
+        Self { local:self.local, x: true, y: false, z: false }
     }
 
-    pub fn only_y() -> Self {
-        Self { x: false, y: true, z: false }
+    pub fn only_y(self) -> Self {
+        Self { local:false, x: false, y: true, z: false }
     }
 
-    pub fn only_z() -> Self {
-        Self { x: false, y: false, z: true }
+    pub fn only_z(self) -> Self {
+        Self { local:self.local, x: false, y: false, z: true }
     }
 
-    pub fn except_x() -> Self {
-        Self { x: false, y: true, z: true }
+    pub fn except_x(self) -> Self {
+        Self { local:self.local, x: false, y: true, z: true }
     }
 
-    pub fn except_y() -> Self {
-        Self { x: true, y: false, z: true }
+    pub fn except_y(self) -> Self {
+        Self { local:self.local, x: true, y: false, z: true }
     }
 
-    pub fn except_z() -> Self {
-        Self { x: true, y: true, z: false }
+    pub fn except_z(self) -> Self {
+        Self { local:self.local, x: true, y: true, z: false }
     }
 }
 
@@ -706,28 +708,28 @@ fn handle_axis_locking(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &m
     if keyboard_input.just_pressed(KeyCode::KeyX) {
         if shift_pressed {
             // Shift + X: X축 제외하고 잠금
-            *lock_mode = LockAxis::except_x();
+            *lock_mode = lock_mode.except_x();
         } else {
             // X: X축만 잠금
-            *lock_mode = LockAxis::only_x();
+            *lock_mode = lock_mode.only_x();
         }
     }
     else if keyboard_input.just_pressed(KeyCode::KeyY) {
         if shift_pressed {
             // Shift + Y: Y축 제외하고 잠금
-            *lock_mode = LockAxis::except_y();
+            *lock_mode = lock_mode.except_y();
         } else {
             // Y: Y축만 잠금
-            *lock_mode = LockAxis::only_y();
+            *lock_mode = lock_mode.only_y();
         }
     }
     else if keyboard_input.just_pressed(KeyCode::KeyZ) {
         if shift_pressed {
             // Shift + Z: Z축 제외하고 잠금
-            *lock_mode = LockAxis::except_z();
+            *lock_mode = lock_mode.except_z();
         } else {
             // Z: Z축만 잠금
-            *lock_mode = LockAxis::only_z();
+            *lock_mode = lock_mode.only_z();
         }
     }
 }
