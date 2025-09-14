@@ -84,12 +84,19 @@ pub enum RotationAxis {
     Z(RotationMode),
 }
 
+pub struct ControlTarget {
+    pub entity:Entity,
+    pub parent:Option<Entity>,
+    pub global_transform:GlobalTransform,
+    pub local_transform:Transform,
+}
+
 #[derive(Resource, Default)]
 pub enum MarkControlStatus {
     #[default]
     None,
-    Translation { base:Vec2, lock_mode:LockAxis, origin:Vec<(Entity,Vec3)> },
-    Rotation { base:Vec2, axis_mode:RotationAxis, origin:Vec<(Entity,Quat,Vec3,Option<Entity>)>, trackball_mode:bool },
+    Translation { base:Vec2, lock_mode:LockAxis, data:Vec<ControlTarget> },
+    Rotation { base:Vec2, axis_mode:RotationAxis, data:Vec<ControlTarget>, trackball_mode:bool },
 }
 
 impl MarkControlStatus {
@@ -489,35 +496,40 @@ pub fn transform_control_system(
         MarkControlStatus::None => {
             // G키로 Translation 모드 진입
             if keyboard_input.just_pressed(KeyCode::KeyG) {
-                let origin:Vec<_> = selected_query.iter().map( |parent| {
-                    let (parent_entity, transform) = query.get( parent.0 ).unwrap();
-                    (parent_entity, transform.translation)
-                }).collect();
-                let len = origin.len();
+                let mut data = vec![];
+                for childof in selected_query {
+                    let (target_entity, transform) = query.get( childof.0 ).unwrap();
+                    let Ok( (parent,global_transform) ) = global_query.get(target_entity) else { return Ok(()) };
+                    let parent = parent.map( |parent| parent.0.clone() );
+                    data.push(
+                        ControlTarget { entity:target_entity, parent, global_transform:global_transform.clone(), local_transform:transform.clone() }
+                    );
+                }
+                let len = data.len();
                 if len > 0 {
                     *control_status = MarkControlStatus::Translation {
                         base: cursor_pos,
                         lock_mode: LockAxis::all(),
-                        origin,
+                        data,
                     };
                 }
             }
             // R키로 Rotation 모드 진입
             else if keyboard_input.just_pressed(KeyCode::KeyR) {
-                let mut origin = vec![];
-                for parent in selected_query {
-                    let (parent_entity, transform) = query.get( parent.0 ).unwrap();
-                    let Ok( (parent_parent,gtr) ) = global_query.get(parent_entity) else { return Ok(()) };
-                    let parent_parent = parent_parent.map( |parent| parent.0.clone() );
-                    origin.push(
-                    (parent_entity, gtr.rotation(), gtr.translation(), parent_parent )
+                let mut data = vec![];
+                for childof in selected_query {
+                    let (target_entity, transform) = query.get( childof.0 ).unwrap();
+                    let Ok( (parent,gtr) ) = global_query.get(target_entity) else { return Ok(()) };
+                    let parent = parent.map( |parent| parent.0.clone() );
+                    data.push(
+                        ControlTarget { entity:target_entity, parent, global_transform:gtr.clone(), local_transform:transform.clone() }
                     );
                 }
-                let len = origin.len();
+                let len = data.len();
                 if len > 0 {
                     *control_status = MarkControlStatus::Rotation {
                         base: cursor_pos,
-                        origin,
+                        data,
                         axis_mode: RotationAxis::None,
                         trackball_mode: false,
                     };
@@ -526,7 +538,7 @@ pub fn transform_control_system(
             }
         },
 
-        MarkControlStatus::Translation { base, origin, lock_mode } => {
+        MarkControlStatus::Translation { base, data, lock_mode } => {
             // 축 잠금 처리
             handle_axis_locking(&keyboard_input, lock_mode);
 
@@ -539,7 +551,8 @@ pub fn transform_control_system(
 
                 // 평면: 카메라 뷰 평면 (camera forward와 수직)
                 let plane_normal = cam_transform.forward();
-                let plane_origin = origin[0].1; // 기준점 하나 선택 (첫 번째 선택된 엔티티 위치)
+                // let plane_origin = origin[0].1; // 기준점 하나 선택 (첫 번째 선택된 엔티티 위치)
+                let plane_origin = data[0].local_transform.translation;
 
                 // 두 점을 평면과 교차시켜 "월드 좌표" 얻기
                 let start_hit = ray_from.intersect_plane(plane_origin, InfinitePlane3d { normal: plane_normal })
@@ -550,9 +563,10 @@ pub fn transform_control_system(
                 if let (Some(start), Some(now)) = (start_hit, now_hit) {
                     let delta = now - start;
 
-                    for (entity, base_translation) in origin.iter() {
+                    for ControlTarget {entity, local_transform, ..} in data.iter() {
                         if let Ok( (e,mut tr) ) = query.get_mut(*entity) {
-                            let mut t = *base_translation + delta;
+                            let base_translation = local_transform.translation;
+                            let mut t = base_translation + delta;
 
                             // 축 잠금
                             if !lock_mode.x { t.x = base_translation.x; }
@@ -567,9 +581,9 @@ pub fn transform_control_system(
 
             // 취소 처리
             if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
-                for (parent, origin) in origin.iter_mut() {
-                    let (_parent, mut transform) = query.get_mut(*parent)?;
-                    transform.translation = *origin;
+                for ControlTarget {entity, local_transform, ..} in data.iter_mut() {
+                    let (_parent, mut transform) = query.get_mut(*entity)?;
+                    transform.translation = local_transform.translation;
                 }
                 *control_status = MarkControlStatus::None;
             }
@@ -579,7 +593,7 @@ pub fn transform_control_system(
             }
         },
 
-        MarkControlStatus::Rotation { base, origin, axis_mode, trackball_mode } => {
+        MarkControlStatus::Rotation { base, data, axis_mode, trackball_mode } => {
             // R키를 다시 누르면 트랙볼 모드 토글
             if keyboard_input.just_pressed(KeyCode::KeyR) {
                 *trackball_mode = !*trackball_mode;
@@ -598,12 +612,12 @@ pub fn transform_control_system(
                     let v1 = project_to_sphere(cursor_pos, window.size());
                     let axis = v0.cross(v1).normalize_or_zero();
                     if axis.length_squared() > 0.0 {
-                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos();
+                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos() * 1.5;
                         let q = Quat::from_axis_angle(axis, angle);
 
-                        for (entity, base_rot, base_translation, parent) in origin.iter() {
+                        for ControlTarget {entity, local_transform, ..} in data.iter() {
                             let (_, mut transform) = query.get_mut(*entity)?;
-                            transform.rotation = *base_rot * q;
+                            transform.rotation = local_transform.rotation * q;
                         }
                     }
                 } else {
@@ -613,8 +627,8 @@ pub fn transform_control_system(
                     let mut count = 0;
                     //GlobalTransform 은 PostUpdate 에서 계산되므로 요구 이후에만 제대로 나옴 (즉 프레임 하나를 건너띈 후에야)
                     //때문에 아래의 world_to_viewport 는 Err 이 나올것
-                    for (entity, _gquat, g_trans,_) in origin.iter() {
-                        world_center += g_trans;
+                    for ControlTarget {global_transform, ..} in data.iter() {
+                        world_center += global_transform.translation();
                         count += 1;
                     }
                     world_center /= count as f32;
@@ -634,13 +648,15 @@ pub fn transform_control_system(
                             let rot = Quat::from_axis_angle(axis, signed_angle);
 
                             // 3) 각 엔티티에 대해: 월드 기준 새 pos/rot 계산 후 로컬로 변환해서 저장
-                            for (entity, base_rot, base_pos, parent_opt) in origin.iter() {
+                            for ControlTarget {entity, global_transform, parent, ..} in data.iter() {
+                                let base_rot = global_transform.rotation();
+                                let base_pos = global_transform.translation();
                                 // 월드에서의 새 회전/위치
-                                let new_global_rot = *base_rot * rot;
-                                let new_global_pos = world_center + rot * (*base_pos - world_center);
+                                let new_global_rot = base_rot * rot;
+                                let new_global_pos = world_center + rot * (base_pos - world_center);
 
                                 // 부모가 있는 경우: 부모의 GlobalTransform을 얻어 역변환 적용하여 로컬 변환 계산
-                                if let Some(parent_ent) = parent_opt {
+                                if let Some(parent_ent) = parent {
                                     if let Ok( (_,parent_gt) ) = global_query.get(*parent_ent) {
                                         // parent_gt 의 월드 행렬 구해서 역행렬로 로컬 매트릭스 계산
                                         let parent_mat = parent_gt.compute_matrix();
@@ -685,10 +701,9 @@ pub fn transform_control_system(
             // 취소 처리
             if keyboard_input.just_pressed(KeyCode::Escape) || mouse_input.just_pressed(MouseButton::Right) {
                 // 원래 상태로 복원
-                for (parent, origin, translation,_) in origin.iter() {
-                    let (_parent, mut transform) = query.get_mut(*parent)?;
-                    transform.rotation = *origin;
-                    transform.translation = *translation;
+                for ControlTarget {entity, local_transform, ..} in data.iter() {
+                    let (_parent, mut transform) = query.get_mut(*entity)?;
+                    *transform = *local_transform;
                 }
                 *control_status = MarkControlStatus::None;
             }
