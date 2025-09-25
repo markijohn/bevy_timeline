@@ -349,7 +349,7 @@ fn billboard_fit_scale(
 
 ) {
     const BASE_TEXT_SCALE:f32 = 0.00085;
-    const BASE_BOX_SCALE:f32 = 0.05;
+    const BASE_BOX_SCALE:f32 = 0.035;
 
     if let Ok( camera_transform ) = camera_query.single() {
         for mut transform in query_text.iter_mut() {
@@ -551,8 +551,9 @@ pub fn transform_control_system(
 
                 // 평면: 카메라 뷰 평면 (camera forward와 수직)
                 let plane_normal = cam_transform.forward();
-                // let plane_origin = origin[0].1; // 기준점 하나 선택 (첫 번째 선택된 엔티티 위치)
-                let plane_origin = data[0].local_transform.translation;
+                let plane_origin = data.iter().fold( Vec3::ZERO, |b,e| {
+                    b + e.global_transform.translation()
+                }) / data.len() as f32;
 
                 // 두 점을 평면과 교차시켜 "월드 좌표" 얻기
                 let start_hit = ray_from.intersect_plane(plane_origin, InfinitePlane3d { normal: plane_normal })
@@ -563,10 +564,24 @@ pub fn transform_control_system(
                 if let (Some(start), Some(now)) = (start_hit, now_hit) {
                     let delta = now - start;
 
-                    for ControlTarget {entity, local_transform, ..} in data.iter() {
+                    for ControlTarget {entity, local_transform,global_transform, parent} in data.iter() {
                         if let Ok( (e,mut tr) ) = query.get_mut(*entity) {
-                            let base_translation = local_transform.translation;
-                            let mut t = base_translation + delta;
+                            let base_translation = local_transform.translation; //tr.translation;
+
+                            // 월드 delta를 로컬 좌표계로 변환
+                            let local_delta = if let Some(parent) = parent {
+                                if let Ok( (_,gr) ) = global_query.get(*parent) {
+                                    let parent_matrix = gr.compute_matrix();
+                                    // 월드 공간의 벡터를 로컬 공간으로 변환 (방향만 변환)
+                                    parent_matrix.inverse().transform_vector3(delta)
+                                } else {
+                                    delta
+                                }
+                            } else {
+                                delta
+                            };
+
+                            let mut t = base_translation + local_delta;
 
                             // 축 잠금
                             if !lock_mode.x { t.x = base_translation.x; }
@@ -612,29 +627,68 @@ pub fn transform_control_system(
                     let v1 = project_to_sphere(cursor_pos, window.size());
                     let axis = v0.cross(v1).normalize_or_zero();
                     if axis.length_squared() > 0.0 {
-                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos() * 1.5;
-                        let q = Quat::from_axis_angle(axis, angle);
+                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos() * 3.;
 
-                        for ControlTarget {entity, local_transform, ..} in data.iter() {
-                            let (_, mut transform) = query.get_mut(*entity)?;
-                            transform.rotation = local_transform.rotation * q;
+                        // 핵심: 회전축을 카메라 좌표계로 변환
+                        let cam_right = cam_transform.right();
+                        let cam_up = cam_transform.up();
+                        let cam_forward = cam_transform.forward();
+
+                        // 스크린 좌표계 회전축을 카메라 월드 좌표계로 변환
+                        let world_axis = (cam_right * axis.x + cam_up * axis.y + cam_forward * axis.z).normalize();
+                        let world_rotation = Quat::from_axis_angle(world_axis, angle);
+
+                        // 회전 중심점 계산 (선택된 객체들의 중심)
+                        let mut world_center = Vec3::ZERO;
+                        for ControlTarget {global_transform, ..} in data.iter() {
+                            world_center += global_transform.translation();
+                        }
+                        world_center /= data.len() as f32;
+
+                        for ControlTarget {entity, global_transform, parent, ..} in data.iter() {
+                            if let Ok((_, mut transform)) = query.get_mut(*entity) {
+                                let current_world_pos = global_transform.translation();
+                                let current_world_rot = global_transform.rotation();
+
+                                // 월드에서 새로운 위치와 회전 계산
+                                let new_world_pos = world_center + world_rotation * (current_world_pos - world_center);
+                                let new_world_rot = world_rotation * current_world_rot;
+
+                                // 부모가 있는 경우 로컬 좌표계로 변환
+                                if let Some(parent_ent) = parent {
+                                    if let Ok((_, parent_gt)) = global_query.get(*parent_ent) {
+                                        let parent_mat = parent_gt.compute_matrix();
+                                        let inv_parent = parent_mat.inverse();
+
+                                        // 새로운 월드 Transform을 로컬로 변환
+                                        let new_world_mat = Mat4::from_scale_rotation_translation(
+                                            Vec3::ONE, new_world_rot, new_world_pos
+                                        );
+                                        let new_local_mat = inv_parent * new_world_mat;
+                                        let new_local = Transform::from_matrix(new_local_mat);
+
+                                        *transform = new_local;
+                                    }
+                                } else {
+                                    // 부모가 없으면 직접 설정
+                                    transform.translation = new_world_pos;
+                                    transform.rotation = new_world_rot;
+                                }
+                            }
                         }
                     }
                 } else {
                     // 축 제한 모드
                     // 1. Pivot (선택된 객체들의 월드 중심 → 2D 투영)
-                    let mut world_center = Vec3::ZERO;
-                    let mut count = 0;
                     //GlobalTransform 은 PostUpdate 에서 계산되므로 요구 이후에만 제대로 나옴 (즉 프레임 하나를 건너띈 후에야)
                     //때문에 아래의 world_to_viewport 는 Err 이 나올것
-                    for ControlTarget {global_transform, ..} in data.iter() {
-                        world_center += global_transform.translation();
-                        count += 1;
-                    }
-                    world_center /= count as f32;
+                    let world_center = data.iter().fold( Vec3::ZERO, |b,e| {
+                        b + e.global_transform.translation()
+                    }) / data.len() as f32;
 
                     // 2) 화면상 pivot 좌표 얻기 (카메라 API)
                     if let Ok(pivot_2d) = camera.world_to_viewport(cam_transform, world_center) {
+                        
                         let v1 = *base - pivot_2d;
                         let v2 = cursor_pos - pivot_2d;
                         if v1.length_squared() > 0.0 && v2.length_squared() > 0.0 {
@@ -643,30 +697,32 @@ pub fn transform_control_system(
                             let dot = v1.dot(v2);
                             let signed_angle = cross.atan2(dot);
 
-                            // 회전축: 카메라 앞방향 (부호가 뒤집히면 axis에 -를 붙이세요)
-                            let axis = cam_transform.forward().normalize();
-                            let rot = Quat::from_axis_angle(axis, signed_angle);
+                            // 회전축: 카메라 앞방향 (월드 좌표계)
+                            let world_axis = cam_transform.forward().normalize();
+                            let world_rotation = Quat::from_axis_angle(world_axis, signed_angle);
 
                             // 3) 각 엔티티에 대해: 월드 기준 새 pos/rot 계산 후 로컬로 변환해서 저장
                             for ControlTarget {entity, global_transform, parent, ..} in data.iter() {
-                                let base_rot = global_transform.rotation();
                                 let base_pos = global_transform.translation();
-                                // 월드에서의 새 회전/위치
-                                let new_global_rot = base_rot * rot;
-                                let new_global_pos = world_center + rot * (base_pos - world_center);
+                                let base_rot = global_transform.rotation();
+
+                                // 월드에서의 새 위치와 회전 계산
+                                let new_global_pos = world_center + world_rotation * (base_pos - world_center);
+                                let new_global_rot = world_rotation * base_rot; // 순서 중요!
 
                                 // 부모가 있는 경우: 부모의 GlobalTransform을 얻어 역변환 적용하여 로컬 변환 계산
                                 if let Some(parent_ent) = parent {
-                                    if let Ok( (_,parent_gt) ) = global_query.get(*parent_ent) {
-                                        // parent_gt 의 월드 행렬 구해서 역행렬로 로컬 매트릭스 계산
+                                    if let Ok((_, parent_gt)) = global_query.get(*parent_ent) {
                                         let parent_mat = parent_gt.compute_matrix();
-                                        let inv = parent_mat.inverse();
+                                        let inv_parent = parent_mat.inverse();
 
-                                        let new_global_mat =
-                                            Mat4::from_scale_rotation_translation(Vec3::ONE, new_global_rot, new_global_pos);
-                                        let new_local_mat = inv * new_global_mat;
+                                        // 새로운 월드 변환을 행렬로 구성
+                                        let new_global_mat = Mat4::from_scale_rotation_translation(
+                                            Vec3::ONE, new_global_rot, new_global_pos
+                                        );
 
-                                        // Transform::from_matrix 가 없으면 직접 분해해서 translation/rotation/scale 할 것
+                                        // 로컬 변환으로 변환
+                                        let new_local_mat = inv_parent * new_global_mat;
                                         let new_local = Transform::from_matrix(new_local_mat);
 
                                         if let Ok((_, mut tr)) = query.get_mut(*entity) {
@@ -674,7 +730,7 @@ pub fn transform_control_system(
                                             println!("Done");
                                         }
                                     } else {
-                                        println!("?");
+                                        println!("Parent not found");
                                     }
                                 } else {
                                     // 부모가 없으면 로컬 == 월드 이므로 바로 설정
@@ -683,11 +739,14 @@ pub fn transform_control_system(
                                         tr.rotation = new_global_rot;
                                         println!("Set root");
                                     } else {
-                                        println!("???");
+                                        println!("Entity not found");
                                     }
                                 }
-                            } // for origin
-                        } // if vectors ok
+                            }
+                        }
+
+
+
                     } // if pivot_2
                     else {
                         println!("?????????");
