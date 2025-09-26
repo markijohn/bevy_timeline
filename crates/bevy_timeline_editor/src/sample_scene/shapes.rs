@@ -4,13 +4,13 @@ use bevy::color::Color;
 use bevy::image::Image;
 use bevy::math::{Quat, Vec3};
 use bevy::pbr::{MeshMaterial3d, PointLight, StandardMaterial};
-use bevy::prelude::{default, Annulus, Camera, Camera2d, Camera3d, Capsule2d, Capsule3d, Circle, Commands, Component, Cone, ConicalFrustum, Cuboid, Cylinder, Ellipse, EventReader, Extrusion, Mesh, Mesh3d, Meshable, Plane3d, Rectangle, RegularPolygon, ResMut, Sphere, Tetrahedron, Torus, Transform, Triangle2d, World};
+use bevy::prelude::{default, Annulus, Camera, Camera2d, Camera3d, Capsule2d, Capsule3d, Circle, Commands, Component, Cone, ConicalFrustum, Cuboid, Cylinder, Ellipse, EventReader, Extrusion, Mesh, Mesh3d, Meshable, Name, Plane3d, Rectangle, RegularPolygon, ResMut, Sphere, Tetrahedron, Torus, Transform, Triangle2d, World};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 use bevy::render::view::RenderLayers;
 use bevy_egui::{EguiGlobalSettings, PrimaryEguiContext};
 use bevy_mod_outline::{ComputedOutline, OutlineMode, OutlineStencil, OutlineVolume};
-use transform_gizmo_bevy::{GizmoCamera, GizmoMode, GizmoOptions};
-use crate::picking;
+// use transform_gizmo_bevy::{GizmoCamera, GizmoMode, GizmoOptions};
+// use crate::picking;
 
 /// Creates a colorful test pattern
 fn uv_debug_texture() -> Image {
@@ -61,31 +61,32 @@ pub fn setup_shapes(
     });
 
     let shapes = [
-        meshes.add(Cuboid::default()),
-        meshes.add(Tetrahedron::default()),
-        meshes.add(Capsule3d::default()),
-        meshes.add(Torus::default()),
-        meshes.add(Cylinder::default()),
-        meshes.add(Cone::default()),
-        meshes.add(ConicalFrustum::default()),
-        meshes.add(Sphere::default().mesh().ico(5).unwrap()),
-        meshes.add(Sphere::default().mesh().uv(32, 18)),
+        (Name::new("Cuboid"), meshes.add(Cuboid::default()) ),
+        (Name::new("Tetrahedron"), meshes.add(Tetrahedron::default()) ),
+        (Name::new("Capsule3d"), meshes.add(Capsule3d::default()) ),
+        (Name::new("Torus"), meshes.add(Torus::default()) ),
+        (Name::new("Cylinder"), meshes.add(Cylinder::default()) ),
+        (Name::new("Cone"), meshes.add(Cone::default()) ),
+        (Name::new("ConicalFrustum"), meshes.add(ConicalFrustum::default()) ),
+        (Name::new("Sphere_ico"), meshes.add(Sphere::default().mesh().ico(5).unwrap()) ),
+        (Name::new("Sphere_uv"), meshes.add(Sphere::default().mesh().uv(32, 18)) ),
     ];
 
     let extrusions = [
-        meshes.add(Extrusion::new(Rectangle::default(), 1.)),
-        meshes.add(Extrusion::new(Capsule2d::default(), 1.)),
-        meshes.add(Extrusion::new(Annulus::default(), 1.)),
-        meshes.add(Extrusion::new(Circle::default(), 1.)),
-        meshes.add(Extrusion::new(Ellipse::default(), 1.)),
-        meshes.add(Extrusion::new(RegularPolygon::default(), 1.)),
-        meshes.add(Extrusion::new(Triangle2d::default(), 1.)),
+        (Name::new("Rectangle"), meshes.add(Extrusion::new(Rectangle::default(), 1.)) ),
+        (Name::new("Capsule2d"), meshes.add(Extrusion::new(Capsule2d::default(), 1.)) ),
+        (Name::new("Annulus"), meshes.add(Extrusion::new(Annulus::default(), 1.)) ),
+        (Name::new("Circle"), meshes.add(Extrusion::new(Circle::default(), 1.)) ),
+        (Name::new("Ellipse"), meshes.add(Extrusion::new(Ellipse::default(), 1.)) ),
+        (Name::new("RegularPolygon"), meshes.add(Extrusion::new(RegularPolygon::default(), 1.)) ),
+        (Name::new("Triangle2d"), meshes.add(Extrusion::new(Triangle2d::default(), 1.)) ),
     ];
 
     let num_shapes = shapes.len();
 
-    for (i, shape) in shapes.into_iter().enumerate() {
+    for (i, (name,shape)) in shapes.into_iter().enumerate() {
         commands.spawn((
+            name,
             Mesh3d(shape),
             MeshMaterial3d(debug_material.clone()),
             Transform::from_xyz(
@@ -100,8 +101,9 @@ pub fn setup_shapes(
 
     let num_extrusions = extrusions.len();
 
-    for (i, shape) in extrusions.into_iter().enumerate() {
+    for (i, (name,shape)) in extrusions.into_iter().enumerate() {
         commands.spawn((
+            name,
             Mesh3d(shape),
             MeshMaterial3d(debug_material.clone()),
             Transform::from_xyz(
@@ -119,7 +121,7 @@ pub fn setup_shapes(
                 colour: Color::WHITE,
                 width: 2.0,
             },
-            picking::PickSelection { is_selected: true },
+            // picking::PickSelection { is_selected: true },
             OutlineStencil::default(),
             OutlineMode::default(),
             ComputedOutline::default(),

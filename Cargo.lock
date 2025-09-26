@@ -884,6 +884,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_infinite_grid"
+version = "0.15.0"
+source = "git+https://github.com/ForesightMiningSoftwareCorporation/bevy_infinite_grid?branch=main#0662e4efbcd03f502992f97293843bf06ffe5e11"
+dependencies = [
+ "bevy",
+]
+
+[[package]]
 name = "bevy_input"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1408,6 +1416,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "bevy_infinite_grid",
  "bevy_mod_billboard",
  "bevy_mod_outline",
  "bevy_timeline_impls",
@@ -1415,7 +1424,6 @@ dependencies = [
  "egui_plot",
  "rfd",
  "serde_json",
- "transform-gizmo-bevy",
 ]
 
 [[package]]
@@ -5199,57 +5207,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "transform-gizmo"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ed25525836e568f1360098b7ca7bbe9feba4a8dc8c6e4e7efe5d9848f91631"
-dependencies = [
- "ahash",
- "ecolor 0.31.1",
- "emath 0.31.1",
- "enum_dispatch",
- "enumset",
- "epaint 0.31.1",
- "glam 0.30.4",
- "mint",
-]
-
-[[package]]
-name = "transform-gizmo-bevy"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9775f65250f9bc18df6eb6e1ec91115a72165b453755ed48faada23582ffe892"
-dependencies = [
- "bevy_app",
- "bevy_asset",
- "bevy_core_pipeline",
- "bevy_derive",
- "bevy_ecs",
- "bevy_image",
- "bevy_input",
- "bevy_log",
- "bevy_math",
- "bevy_pbr",
- "bevy_picking",
- "bevy_platform",
- "bevy_reflect",
- "bevy_render",
- "bevy_transform",
- "bevy_utils",
- "bevy_window",
- "bytemuck",
- "transform-gizmo 0.6.0",
- "uuid",
-]
-
-[[package]]
 name = "transform-gizmo-egui"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a10cf575ea95c5b06f7d86495063da0bc045d4767df1aefc1099ccbfe03a4700"
 dependencies = [
  "egui 0.31.1",
- "transform-gizmo 0.5.0",
+ "transform-gizmo",
 ]
 
 [[package]]

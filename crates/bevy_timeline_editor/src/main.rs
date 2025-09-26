@@ -7,20 +7,22 @@ use bevy::render::view::RenderLayers;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{egui, EguiContext, EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext};
 use bevy_egui::egui::{Frame, Id, Margin, Popup, PopupCloseBehavior, ScrollArea, Widget};
+use bevy_infinite_grid::{InfiniteGridBundle, InfiniteGridPlugin};
 use bevy_timeline_runtime::prelude::*;
 use bevy_timeline_impls::prelude::*;
-use transform_gizmo_bevy::*;
 use bevy_mod_outline::*;
 use crate::editor::TimelineEditor;
 use crate::entity_tree::{TargetList, TargetRefreshFn, TimelineTargetListPlugin, TreeNode};
+use crate::fncs::{UtilityFns, UtilityFnsPlugin};
 use crate::sample_scene::{SampleScenePlugin, SpawnSampleScene};
 
 mod camera;
-mod picking;
+// mod picking;
 mod editor;
 mod sample_scene;
 mod entity_tree;
 mod shader;
+mod fncs;
 
 //type TimelineSet = (TransformSet,StdMaterialSet,DirLightSet,PointLightSet,SpotLightSet,);
 type TimelineSet = (DefaultTransformSet,);
@@ -35,16 +37,18 @@ fn main() {
                              ..default()
                          })
         )
+        .add_plugins(InfiniteGridPlugin)
         .add_plugins(bevy_mod_billboard::prelude::BillboardPlugin)
         .add_plugins(camera::PanOrbitCameraPlugin)
         .add_plugins(EguiPlugin::default())
-        .add_plugins(TransformGizmoPlugin)
-        .add_plugins(picking::GizmoPickingPlugin)
-        .insert_resource(GizmoOptions {
-            hotkeys: Some(GizmoHotkeys::default()),
-            ..default()
-        })
+        // .add_plugins(TransformGizmoPlugin)
+        // .add_plugins(picking::GizmoPickingPlugin)
+        // .insert_resource(GizmoOptions {
+        //     hotkeys: Some(GizmoHotkeys::default()),
+        //     ..default()
+        // })
         .add_plugins(TimelinePlugin::<TimelineSet>::new())
+        .add_plugins(UtilityFnsPlugin)
         .add_plugins(SampleScenePlugin)
         .add_plugins(TimelineTargetListPlugin)
         .add_systems(Startup, setup)
@@ -52,12 +56,18 @@ fn main() {
     .run();
 }
 
+#[derive(Component)]
+pub struct MainCamera;
+
+#[derive(Component)]
+pub struct UserSpawned;
+
 #[derive(Resource,Default)]
 pub struct AnimationData(Vec<Handle<TimelineAnimationSet>>);
 
 
 fn setup(
-    mut gizmo_options: ResMut<GizmoOptions>,
+    // mut gizmo_options: ResMut<GizmoOptions>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut egui_global_settings: ResMut<EguiGlobalSettings>,
@@ -65,13 +75,15 @@ fn setup(
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    gizmo_options.gizmo_modes.remove( GizmoMode::ScaleX );
-    gizmo_options.gizmo_modes.remove( GizmoMode::ScaleY );
-    gizmo_options.gizmo_modes.remove( GizmoMode::ScaleZ );
-    gizmo_options.visuals.gizmo_size = 75. / 1.3;
+    // gizmo_options.gizmo_modes.remove( GizmoMode::ScaleX );
+    // gizmo_options.gizmo_modes.remove( GizmoMode::ScaleY );
+    // gizmo_options.gizmo_modes.remove( GizmoMode::ScaleZ );
+    // gizmo_options.visuals.gizmo_size = 75. / 1.3;
 
     // Disable the automatic creation of a primary context to set it up manually for the camera we need.
     egui_global_settings.auto_create_primary_context = false;
+
+    commands.spawn(InfiniteGridBundle::default());
 
     commands.spawn((
         Name::new("DefaultPointLight"),
@@ -94,7 +106,9 @@ fn setup(
         },
         Camera3d::default(),
         Transform::from_xyz(0.0, 7., 14.0).looking_at(Vec3::new(0., 1., 0.), Vec3::Y),
-        GizmoCamera,
+
+        // GizmoCamera,
+        MainCamera,
     ));
 
     // Egui camera.
@@ -115,6 +129,7 @@ fn setup(
 fn draw_egui(
     time: Res<Time>,
     mut cmds: Commands,
+    utility_fns: Res<UtilityFns>,
     target_refresh_fn: Res<TargetRefreshFn>,
     target_list: Res<TargetList>,
     sample_scene_spawner: Res<SpawnSampleScene>,
@@ -147,6 +162,7 @@ fn draw_egui(
 
                                     cmds.spawn( (
                                         SceneRoot(handle),
+                                        UserSpawned,
                                         Visibility::default()
                                     ) );
                                 }
@@ -171,8 +187,8 @@ fn draw_egui(
                         }
                     }
                 }
-                if ui.button("Mapper").clicked() {
-                    
+                if ui.button("Clear").clicked() {
+                    cmds.run_system( utility_fns.clear_fn_id );
                 }
             });
 

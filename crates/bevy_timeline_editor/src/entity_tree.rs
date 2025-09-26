@@ -370,20 +370,27 @@ use bevy::prelude::{Res,ButtonInput,MouseButton,Window,Camera,GlobalTransform,Ve
 use bevy::render::camera::ViewportConversionError;
 use bevy::window::PrimaryWindow;
 use bevy_egui::input::egui_wants_any_pointer_input;
-use transform_gizmo_bevy::GizmoCamera;
+use crate::MainCamera;
+// use transform_gizmo_bevy::GizmoCamera;
 
 fn handle_mouse_click_with_radius(
     mut commands:Commands,
     mut last_focus: Local<Option<Entity>>,
-    control_status: Res<MarkControlStatus>,
+    mut control_status: ResMut<MarkControlStatus>,
     key: Res<ButtonInput<KeyCode>>,
     button: Res<ButtonInput<MouseButton>>,
     q_windows: Query<&Window, With<PrimaryWindow>>,
-    q_camera: Query<(&Camera, &GlobalTransform), With<GizmoCamera>>,
+    q_camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     q_transforms: Query<(Entity, Option<&SelectedMark>, &MarkTextEntity, &GlobalTransform), With<Transform>>,
     mut billboard_text: Query<&mut Visibility, With<BillboardText>>,
 ) -> Result {
     const MAX_CLICK_DISTANCE: f32 = 35.0; // 최대 클릭 거리
+
+    // 확정 처리 (마우스 왼쪽 클릭 또는 엔터)
+    if !control_status.is_none() && (button.just_pressed(MouseButton::Left) || key.just_pressed(KeyCode::Enter)) {
+        *control_status = MarkControlStatus::None;
+        return Ok(())
+    }
 
     if let Some(cursor_pos) = q_windows.single()?.cursor_position() {
         let (camera, camera_transform) = q_camera.single()?;
@@ -404,6 +411,7 @@ fn handle_mouse_click_with_radius(
             .min_by(|(_,_,_, a), (_,_,_, b)| a.partial_cmp(b).unwrap());
 
         let mut hide_text = None;
+
         match closest {
             Some((entity,is_selected, mark_entity, distance)) => {
                 // println!("근접 마커: {:?}, 거리: {:.2}", mark_entity.0, distance);
@@ -474,19 +482,20 @@ fn project_to_sphere(p: Vec2, size: Vec2) -> Vec3 {
 
 // Transform 제어 시스템
 pub fn transform_control_system(
-    cameras: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    cameras: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut last_cursor_pos: Local<Vec2>,
     mut commands: Commands,
     mut control_status: ResMut<MarkControlStatus>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mouse_input: Res<ButtonInput<MouseButton>>,
     windows: Query<&Window, With<PrimaryWindow>>,
-    mut global_query: Query<(Option<&ChildOf>,&mut GlobalTransform), Without<Camera3d>>,
+    mut global_query: Query<(Option<&ChildOf>,&mut GlobalTransform), Without<MainCamera>>,
     mut query: Query<(Entity, &mut Transform)>,
     mut selected_query: Query<&ChildOf, With<SelectedMark>>,
 ) -> Result {
     let (camera, cam_transform) = cameras.single()?; // 주 카메라
-    let window = windows.single()?;
+    // let window = windows.single()?;
+    let Ok(window) = windows.single() else { return Ok(()); };
     let cursor_pos = window.cursor_position().unwrap_or(Vec2::ZERO);
     let is_cursor_moved = (cursor_pos - *last_cursor_pos) != Vec2::ZERO;
     *last_cursor_pos = cursor_pos;
@@ -600,10 +609,6 @@ pub fn transform_control_system(
                     let (_parent, mut transform) = query.get_mut(*entity)?;
                     transform.translation = local_transform.translation;
                 }
-                *control_status = MarkControlStatus::None;
-            }
-            // 확정 처리 (마우스 왼쪽 클릭 또는 엔터)
-            else if mouse_input.just_pressed(MouseButton::Left) || keyboard_input.just_pressed(KeyCode::Enter) {
                 *control_status = MarkControlStatus::None;
             }
         },
@@ -764,10 +769,6 @@ pub fn transform_control_system(
                     let (_parent, mut transform) = query.get_mut(*entity)?;
                     *transform = *local_transform;
                 }
-                *control_status = MarkControlStatus::None;
-            }
-            // 확정 처리
-            else if mouse_input.just_pressed(MouseButton::Left) || keyboard_input.just_pressed(KeyCode::Enter) {
                 *control_status = MarkControlStatus::None;
             }
         },
