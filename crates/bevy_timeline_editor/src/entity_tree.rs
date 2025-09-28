@@ -14,9 +14,17 @@ use bevy::text::{JustifyText, TextColor, TextFont, TextLayout};
 use bevy_mod_billboard::prelude::*;
 use crate::shader::top::*;
 
+#[derive(Clone,Copy)]
+pub enum LockMode {
+    Free,
+    Global,
+    Local,
+}
+
 #[derive(Clone, Copy)]
 pub struct LockAxis {
-    pub local: bool,
+    pub mode: LockMode,
+    pub inverse: bool,
     pub x: bool,
     pub y: bool,
     pub z: bool,
@@ -25,7 +33,8 @@ pub struct LockAxis {
 impl Default for LockAxis {
     fn default() -> Self {
         Self {
-            local: false,
+            mode: LockMode::Free,
+            inverse: false,
             x: false,
             y: false,
             z: false,
@@ -33,37 +42,72 @@ impl Default for LockAxis {
     }
 }
 
+enum LockKey {
+    X,
+    Y,
+    Z
+}
+
 impl LockAxis {
     pub fn all() -> Self {
-        Self { local:true, x: true, y: true, z: true }
+        Self { mode:LockMode::Free, inverse:false, x: true, y: true, z: true }
     }
 
     pub fn none(self) -> Self {
-        Self { local:self.local, x: false, y: false, z: false }
+        Self { mode:self.mode, inverse:self.inverse, x: false, y: false, z: false }
     }
 
-    pub fn only_x(self) -> Self {
-        Self { local:self.local, x: true, y: false, z: false }
+    pub fn lock_x(self) -> Self {
+        Self { mode:self.mode, inverse:self.inverse, x: true, y: false, z: false }
     }
 
-    pub fn only_y(self) -> Self {
-        Self { local:false, x: false, y: true, z: false }
+    pub fn lock_y(self) -> Self {
+        Self { mode:self.mode, inverse:self.inverse, x: false, y: true, z: false }
     }
 
-    pub fn only_z(self) -> Self {
-        Self { local:self.local, x: false, y: false, z: true }
+    pub fn lock_z(self) -> Self {
+        Self { mode:self.mode, inverse:self.inverse, x: false, y: false, z: true }
     }
 
-    pub fn except_x(self) -> Self {
-        Self { local:self.local, x: false, y: true, z: true }
+    pub fn inverse(self) -> Self {
+        Self { mode:self.mode, inverse:!self.inverse, x: self.x, y: self.y, z: self.z }
     }
 
-    pub fn except_y(self) -> Self {
-        Self { local:self.local, x: true, y: false, z: true }
-    }
-
-    pub fn except_z(self) -> Self {
-        Self { local:self.local, x: true, y: true, z: false }
+    pub fn interactive(self, shift:bool, lock_key:LockKey) -> Self {
+        let mut new_axis = self;
+        new_axis.inverse = shift;
+        let mut rot_mode = false;
+        match lock_key {
+            LockKey::X => {
+                if new_axis.x {
+                    rot_mode = true;
+                } else {
+                    new_axis.x = true;
+                }
+            }
+            LockKey::Y => {
+                if new_axis.y {
+                    rot_mode = true;
+                } else {
+                    new_axis.y = true;
+                }
+            }
+            LockKey::Z => {
+                if new_axis.z {
+                    rot_mode = true;
+                } else {
+                    new_axis.z = true;
+                }
+            }
+        }
+        if rot_mode {
+            new_axis.mode = match new_axis.mode {
+                LockMode::Free => { LockMode::Global },
+                LockMode::Global => { LockMode::Local },
+                LockMode::Local => { LockMode::Free },
+            }
+        }
+        new_axis
     }
 }
 
@@ -632,7 +676,7 @@ pub fn transform_control_system(
                     let v1 = project_to_sphere(cursor_pos, window.size());
                     let axis = v0.cross(v1).normalize_or_zero();
                     if axis.length_squared() > 0.0 {
-                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos() * 3.;
+                        let angle = v0.dot(v1).clamp(-1.0, 1.0).acos() * 6.;
 
                         // 핵심: 회전축을 카메라 좌표계로 변환
                         let cam_right = cam_transform.right();
@@ -781,31 +825,13 @@ fn handle_axis_locking(keyboard_input: &Res<ButtonInput<KeyCode>>, lock_mode: &m
     let shift_pressed = keyboard_input.pressed(KeyCode::ShiftLeft) || keyboard_input.pressed(KeyCode::ShiftRight);
 
     if keyboard_input.just_pressed(KeyCode::KeyX) {
-        if shift_pressed {
-            // Shift + X: X축 제외하고 잠금
-            *lock_mode = lock_mode.except_x();
-        } else {
-            // X: X축만 잠금
-            *lock_mode = lock_mode.only_x();
+        if lock_mode.x {
+
         }
     }
     else if keyboard_input.just_pressed(KeyCode::KeyY) {
-        if shift_pressed {
-            // Shift + Y: Y축 제외하고 잠금
-            *lock_mode = lock_mode.except_y();
-        } else {
-            // Y: Y축만 잠금
-            *lock_mode = lock_mode.only_y();
-        }
     }
     else if keyboard_input.just_pressed(KeyCode::KeyZ) {
-        if shift_pressed {
-            // Shift + Z: Z축 제외하고 잠금
-            *lock_mode = lock_mode.except_z();
-        } else {
-            // Z: Z축만 잠금
-            *lock_mode = lock_mode.only_z();
-        }
     }
 }
 
