@@ -42,7 +42,10 @@ impl Default for LockAxis {
     }
 }
 
-enum LockKey {
+enum TransformKey {
+    G,
+    R,
+    S,
     X,
     Y,
     Z
@@ -73,59 +76,6 @@ impl LockAxis {
         Self { mode:self.mode, inverse:!self.inverse, x: self.x, y: self.y, z: self.z }
     }
 
-    pub fn interactive(self, shift:bool, lock_key:LockKey) -> Self {
-        let mut new_axis = self;
-        new_axis.inverse = shift;
-        let mut rot_mode = false;
-        match lock_key {
-            LockKey::X => {
-                if new_axis.x {
-                    rot_mode = true;
-                } else {
-                    new_axis.x = true;
-                }
-            }
-            LockKey::Y => {
-                if new_axis.y {
-                    rot_mode = true;
-                } else {
-                    new_axis.y = true;
-                }
-            }
-            LockKey::Z => {
-                if new_axis.z {
-                    rot_mode = true;
-                } else {
-                    new_axis.z = true;
-                }
-            }
-        }
-        if rot_mode {
-            new_axis.mode = match new_axis.mode {
-                LockMode::Free => { LockMode::Global },
-                LockMode::Global => { LockMode::Local },
-                LockMode::Local => { LockMode::Free },
-            }
-        }
-        new_axis
-    }
-}
-
-#[derive(Clone)]
-pub enum RotationMode {
-    World,
-    Local,
-    LockWorld,
-    LockLocal,
-}
-
-#[derive(Clone,Default)]
-pub enum RotationAxis {
-    #[default]
-    None,
-    X(RotationMode),
-    Y(RotationMode),
-    Z(RotationMode),
 }
 
 pub struct ControlTarget {
@@ -140,7 +90,7 @@ pub enum MarkControlStatus {
     #[default]
     None,
     Translation { base:Vec2, lock_mode:LockAxis, data:Vec<ControlTarget> },
-    Rotation { base:Vec2, axis_mode:RotationAxis, data:Vec<ControlTarget>, trackball_mode:bool },
+    Rotation { base:Vec2, lock_mode:LockAxis, data:Vec<ControlTarget>, trackball_mode:bool },
 }
 
 impl MarkControlStatus {
@@ -149,6 +99,49 @@ impl MarkControlStatus {
             Self::None => true,
             _ => false
         }
+    }
+
+    
+    pub fn interactive(self, shift:bool, lock_key:TransformKey) -> Self {
+        let keep_inverse = self.inverse == shift;
+        let mut new_axis = self;
+        new_axis.inverse = shift;
+        let keep_axis = match lock_key {
+            TransformKey::X => {
+                if new_axis.x {
+                    true
+                } else {
+                    new_axis.x = true;
+                    false
+                }
+            }
+            LockTransformKeyKey::Y => {
+                if new_axis.y {
+                    true
+                } else {
+                    new_axis.y = true;
+                    false
+                }
+            }
+            TransformKey::Z => {
+                if new_axis.z {
+                    true
+                } else {
+                    new_axis.z = true;
+                    false
+                }
+            }
+        };
+        if keep_axis && keep_inverse {
+            new_axis.mode = match new_axis.mode {
+                LockMode::Free => { LockMode::Global },
+                LockMode::Global => { LockMode::Local },
+                LockMode::Local => { LockMode::Free },
+            }
+        } else {
+            new_axis.mode = LockMode::Free;
+        }
+        new_axis
     }
 }
 
